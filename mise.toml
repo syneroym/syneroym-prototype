@@ -1,0 +1,66 @@
+# -------------------------------------------------------------------
+# Syneroym — Project Toolchain Configuration
+# Managed by mise (https://mise.jdx.dev)
+#
+# Scope:
+# - Language runtimes
+# - CLI tooling
+# - Build environment variables
+#
+# Not managed here:
+# - Xcode
+# - Android Studio
+# - iOS / Android SDK installations
+# -------------------------------------------------------------------
+
+[tools]
+# Rust for Tauri backend & core logic
+rust = "stable"
+
+# Node.js for SolidJS frontend & Tauri tooling
+node = "24"
+
+# Python for scripts, tooling, or CI helpers
+python = "3.14"
+
+# Java for Android tooling (CLI usage, not Android Studio itself)
+java = "17"
+
+# -------------------------------------------------------------------
+
+[hooks]
+# Enabling corepack will install the `pnpm` package manager specified in your package.json
+# alternatively, you can also install `pnpm` with mise
+postinstall = 'npx corepack enable'
+
+[settings]
+# This must be enabled to make the hooks work
+experimental = true
+
+# -------------------------------------------------------------------
+
+[env]
+# --- Android --- update mise.local.toml with your own Android paths
+# ANDROID_HOME = "/Users/yourname/Library/Android/sdk"
+# ANDROID_SDK_ROOT = "/Users/yourname/Library/Android/sdk"
+
+# Optional: if you use the NDK directly
+# ANDROID_NDK_HOME = "/Users/yourname/Library/Android/sdk/ndk/26.1.10909125"
+
+# --- iOS / Xcode ---
+# Xcode is selected via xcode-select, not mise
+# This is just informational or for scripts
+XCODE_PATH = "/Applications/Xcode.app"
+
+# --- Tauri ---
+TAURI_PLATFORM = "desktop" # override in scripts if needed
+TAURI_LOG_LEVEL = "info"
+
+# --- Node / frontend ---
+NODE_ENV = "development"
+
+# --- Rust ---
+RUST_BACKTRACE = "1"
+
+# --- General ---
+LANG = "en_US.UTF-8"
