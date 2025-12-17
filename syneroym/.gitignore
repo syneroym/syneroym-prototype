@@ -13,12 +13,35 @@ dist-ssr
 *.local
 
 # Editor directories and files
+/.idea
+.project
+.classpath
+*.launch
+.settings/
 .vscode/*
 !.vscode/extensions.json
 .idea
-.DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+#vite related
+.wrangler
+.output
+.vercel
+.netlify
+.vinxi
+app.config.timestamp_*.js
+
+# Environment
+.env
+.env*.local
+
+# Temp
+gitignore
+
+# System Files
+.DS_Store
+Thumbs.db
