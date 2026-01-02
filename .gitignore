@@ -1,3 +1,7 @@
 # mise
 mise.local.toml
 
+# AI assistants
+.gemini
+
+target
