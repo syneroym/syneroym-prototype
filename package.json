@@ -1,0 +1,5 @@
+{
+    "private": true,
+    "name": "syneroym-monorepo",
+    "packageManager": "pnpm@9.15.9"
+}

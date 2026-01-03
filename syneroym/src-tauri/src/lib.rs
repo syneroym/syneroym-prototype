@@ -1,7 +1,9 @@
+use common::utils::intro;
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+    format!("Hello, {}! You've been greeted from Rust!", intro(name))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
