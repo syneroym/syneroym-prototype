@@ -1,22 +1,40 @@
 {
   "compilerOptions": {
     "strict": true,
-    "target": "ESNext",
-    "module": "ESNext",
-    "lib": ["DOM", "DOM.Iterable", "ESNext"],
-    "moduleResolution": "node",
-    "resolveJsonModule": true,
-    "esModuleInterop": true,
-    "noEmit": true,
-    "isolatedModules": true,
+    "target": "ES2020",
+    "lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "skipLibCheck": true,
-    "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "noUncheckedIndexedAccess": true,
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
-    "types": [],
-    "baseUrl": "."
+    "baseUrl": ".",
+    // Modules
+    "useDefineForClassFields": true,
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "module": "ESNext",
+    /* Linting */
+    "types": [
+      "vite/client"
+    ],
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
   },
-  "exclude": ["node_modules", "dist", "./dev"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "./dev"
+  ]
 }

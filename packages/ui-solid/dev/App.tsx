@@ -1,6 +1,7 @@
 import type { Component } from 'solid-js'
 import logo from './logo.svg'
 import styles from './App.module.css'
+import './index.css'
 import { Hello } from 'src'
 
 const App: Component = () => {
@@ -9,13 +10,13 @@ const App: Component = () => {
       <header class={styles.header}>
         <img src={logo} class={styles.logo} alt="logo" />
         <h1>
-          <Hello></Hello>
+          <Hello />
         </h1>
         <p>
           Edit <code>src/App.tsx</code> and save to reload.
         </p>
         <a
-          class={styles.link}
+          class="bg-blue-500"
           href="https://github.com/solidjs/solid"
           target="_blank"
           rel="noopener noreferrer"

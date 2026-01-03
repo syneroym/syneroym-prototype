@@ -10,5 +10,8 @@
         ".": {
             "default": "./src/index.css"
         }
+    },
+    "peerDependencies": {
+        "tailwindcss": "^4.1.13"
     }
 }

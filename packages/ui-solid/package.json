@@ -53,7 +53,14 @@
   "peerDependencies": {
     "solid-js": "^1.9.9"
   },
+  "dependencies": {
+    "solid-js": "^1.9.9",
+    "@ui/styles": "workspace:*"
+  },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.1.13",
+    "solid-devtools": "^0.34.3",
+    "tailwindcss": "^4.1.13",
     "@types/node": "^20.12.12",
     "@typescript-eslint/eslint-plugin": "^7.9.0",
     "@typescript-eslint/parser": "^7.9.0",
@@ -68,9 +75,9 @@
     "solid-js": "^1.8.17",
     "tsup": "^8.0.2",
     "tsup-preset-solid": "^2.2.0",
-    "typescript": "^5.4.5",
-    "vite": "^5.2.11",
-    "vite-plugin-solid": "^2.10.2",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.4",
+    "vite-plugin-solid": "^2.11.8",
     "vitest": "^1.6.0"
   },
   "keywords": [

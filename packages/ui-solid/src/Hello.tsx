@@ -19,8 +19,6 @@ export const Hello: Component<{ to?: string }> = props => {
     })
 
     return (
-        <>
-            <div class="text-4xl text-green-700 text-center py-20">{hello()}</div>
-        </>
+        <div class="text-4xl text-green-700 text-center py-20">{hello()}</div>
     )
 }
