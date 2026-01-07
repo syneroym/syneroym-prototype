@@ -24,16 +24,19 @@
   "types": "./dist/index.d.ts",
   "browser": {},
   "exports": {
-    ".": {
-      "development": "./src/index.tsx",
+    "solid": {
+      "development": "./dist/dev.jsx",
+      "import": "./dist/index.jsx"
+    },
+    "development": {
       "import": {
         "types": "./dist/index.d.ts",
-        "default": "./dist/index.js"
-      },
-      "solid": {
-        "development": "./src/index.tsx",
-        "import": "./dist/index.jsx"
+        "default": "./dist/dev.js"
       }
+    },
+    "import": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
   },
   "typesVersions": {},
