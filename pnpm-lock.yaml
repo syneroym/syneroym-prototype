@@ -8,7 +8,7 @@ importers:
 
   .: {}
 
-  app-syneroym:
+  app-xplatform:
     dependencies:
       '@tauri-apps/api':
         specifier: ^2
