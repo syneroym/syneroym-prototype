@@ -1,5 +1,5 @@
 [workspace]
-members = ["lib-rust/*", "app-xplatform/src-tauri"]
+members = ["lib-rust/*", "app-xplatform/src-tauri", "app-cmdline"]
 resolver = "3"
 
 # Profiles for app size https://v2.tauri.app/concept/size/
@@ -12,3 +12,22 @@ lto = true        # Enables link-time-optimizations.
 opt-level = "s"   # Prioritizes small binary size. Use `3` if you prefer speed.
 panic = "abort"   # Higher performance by disabling panic handlers.
 strip = true      # Ensures debug symbols are removed.
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Syneroym Devs"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/syneroym/syneroym"
+
+[workspace.dependencies]
+lib-common = { path = "lib-rust/common" }
+
+# Common external dependencies
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"
+tokio = { version = "1.49", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"

@@ -1,0 +1,19 @@
+[package]
+name = "syneroym-cli"
+description = "Run a syneroym peer node"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "syneroym-cli"
+path = "src/main.rs"
+
+[dependencies]
+common = { path = "../lib-rust/common" }
+figment = { version = "0.10.19", features = ["toml", "env"] }
+clap.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+serde.workspace = true
