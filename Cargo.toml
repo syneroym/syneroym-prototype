@@ -1,5 +1,5 @@
 [workspace]
-members = ["lib-rust/*", "app-syneroym/src-tauri"]
+members = ["lib-rust/*", "app-xplatform/src-tauri"]
 resolver = "3"
 
 # Profiles for app size https://v2.tauri.app/concept/size/
