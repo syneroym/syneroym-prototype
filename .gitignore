@@ -1,8 +1,5 @@
 # mise
 mise.local.toml
 
-# AI assistants
-.gemini
-
 target
 node_modules
