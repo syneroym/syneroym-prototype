@@ -1,0 +1,19 @@
+# Syneroym Configuration
+
+# Enable http transport support
+http_txp = true
+
+# Iroh communication configuration
+# Presence of this section enables Iroh P2P
+[iroh_comm]
+# Path to the secret key file. Remove or leave empty to use a transient/default key.
+# secret_key_path = "./.iroh-secret"
+
+# List of ALPN protocols to register.
+alpn_protocols = ["syneroym/1.0", "iroh-http/1.0"]
+
+# Optional custom Relay URL.
+# relay_url = "https://relay.example.com"
+
+# Optional RPC port.
+# rpc_port = 4433

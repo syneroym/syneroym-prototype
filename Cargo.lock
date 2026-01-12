@@ -563,15 +563,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "common"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3584,9 +3575,9 @@ dependencies = [
 name = "syneroym"
 version = "0.1.0"
 dependencies = [
- "common",
  "serde",
  "serde_json",
+ "syneroym-common",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
@@ -3598,9 +3589,28 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "common",
  "figment",
  "serde",
+ "syneroym-common",
+ "syneroym-net",
+ "tokio",
+]
+
+[[package]]
+name = "syneroym-common"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "syneroym-net"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "syneroym-common",
  "tokio",
 ]
 

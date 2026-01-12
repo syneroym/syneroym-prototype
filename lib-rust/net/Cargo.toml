@@ -1,13 +1,11 @@
 [package]
-name = "syneroym-common"
+name = "syneroym-net"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
-serde_json.workspace = true
-serde.workspace = true
+common.workspace = true
 anyhow.workspace = true
-
-[dev-dependencies]
+tokio.workspace = true

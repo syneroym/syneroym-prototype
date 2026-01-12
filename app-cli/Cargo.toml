@@ -11,7 +11,8 @@ name = "syneroym-cli"
 path = "src/main.rs"
 
 [dependencies]
-common = { path = "../lib-rust/common" }
+common.workspace = true
+net.workspace = true
 figment = { version = "0.10.19", features = ["toml", "env"] }
 clap.workspace = true
 anyhow.workspace = true
