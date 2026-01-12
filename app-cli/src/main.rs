@@ -1,10 +1,14 @@
+mod args;
+mod config;
+
 use anyhow::Result;
+use args::Cli;
 use clap::Parser;
+use config::Config;
 use figment::{
     providers::{Env, Format, Serialized, Toml},
     Figment,
 };
-use syneroym_cli::{args::Cli, config::Config};
 
 const APP_ENV_VAR_PREFIX: &str = "SYNEROYM_";
 
