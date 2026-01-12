@@ -1,10 +1,9 @@
 mod args;
-mod config;
 
 use anyhow::Result;
 use args::Cli;
 use clap::Parser;
-use config::Config;
+use common::config::Config;
 use figment::{
     providers::{Env, Format, Serialized, Toml},
     Figment,
