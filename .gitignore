@@ -3,3 +3,5 @@ mise.local.toml
 
 target
 node_modules
+
+.vscode/settings.json
