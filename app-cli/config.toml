@@ -4,7 +4,7 @@
 enabled_comms = ["iroh", "webrtc"]
 
 # List of ALPN protocols to register.
-alpn_protocols = ["syneroym/1.0", "iroh-http/1.0"]
+alpn_protocols = ["syneroym/1.0", "http/1.1"]
 
 # Iroh communication configuration
 # Presence of this section enables Iroh P2P
@@ -14,4 +14,3 @@ alpn_protocols = ["syneroym/1.0", "iroh-http/1.0"]
 
 # Optional custom Relay URL.
 # relay_url = "https://relay.example.com"
-
