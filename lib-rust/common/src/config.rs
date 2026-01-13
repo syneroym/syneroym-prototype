@@ -4,16 +4,16 @@ use std::path::PathBuf;
 #[derive(Deserialize, Serialize)]
 pub struct Config {
     /// Iroh communication configuration
-    pub iroh_comm: Option<IrohCommConfig>,
-    /// Enable http transport support
-    pub http_txp: bool,
+    pub comm_iroh: Option<IrohCommConfig>,
+    /// List of enabled communication interfaces (e.g. "iroh", "webrtc")
+    pub enabled_comms: Vec<String>,
 }
 
 impl Default for Config {
     fn default() -> Config {
         Config {
-            iroh_comm: Some(IrohCommConfig::default()),
-            http_txp: false,
+            comm_iroh: Some(IrohCommConfig::default()),
+            enabled_comms: vec!["iroh".to_string()],
         }
     }
 }

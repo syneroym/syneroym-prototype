@@ -1,11 +1,11 @@
 # Syneroym Configuration
 
-# Enable http transport support
-http_txp = true
+# List of enabled communication interfaces
+enabled_comms = ["iroh", "webrtc"]
 
 # Iroh communication configuration
 # Presence of this section enables Iroh P2P
-[iroh_comm]
+[comm_iroh]
 # Path to the secret key file. Remove or leave empty to use a transient/default key.
 # secret_key_path = "./.iroh-secret"
 
