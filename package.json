@@ -1,5 +1,10 @@
 {
     "private": true,
     "name": "syneroym-monorepo",
+    "scripts": {
+        "audit": "pnpm run audit:js && pnpm run audit:rust",
+        "audit:js": "pnpm audit",
+        "audit:rust": "cargo audit"
+    },
     "packageManager": "pnpm@9.15.9"
 }

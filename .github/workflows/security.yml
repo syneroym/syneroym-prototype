@@ -1,0 +1,44 @@
+name: Security Audit
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 0 * * 0' # Run once a week on Sunday at midnight
+
+jobs:
+  rust-audit:
+    name: Rust Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Security Audit
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  js-audit:
+    name: JavaScript Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          
+      - name: Run pnpm audit
+        # Audits dependencies for vulnerabilities. 
+        # --prod only checks production dependencies. Remove if dev deps are also a concern.
+        # usually for a library/app, we care about what goes into build.
+        # But for dev tools vulnerability, it might exploit CI. 
+        # I'll stick to default (all) or check user preference? 
+        # 'pnpm audit' checks all.
+        run: pnpm audit

@@ -16,6 +16,7 @@
 [tools]
 # Rust for Tauri backend & core logic
 rust = "stable"
+"cargo:cargo-audit" = "0.20"
 
 # Node.js for SolidJS frontend & Tauri tooling
 node = "24"
