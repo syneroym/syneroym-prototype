@@ -15,11 +15,26 @@ impl PeerNode {
         info!("Bootstrapping Syneroym PeerNode...");
         
         // Initialize Networking
-        net::init(&self.config).await?;
+        self.init_networking().await?;
 
         // Future: Initialize Storage, etc.
         
         info!("PeerNode bootstrapped successfully.");
+        Ok(())
+    }
+
+    async fn init_networking(&self) -> Result<()> {
+        for comm in &self.config.enabled_comms {
+            match comm.as_str() {
+                "iroh" => {
+                    info!("Initializing Iroh interface...");
+                    net_iroh::init(&self.config).await?;
+                }
+                _ => {
+                    info!("Unknown or unimplemented communication interface: {}", comm);
+                }
+            }
+        }
         Ok(())
     }
 }

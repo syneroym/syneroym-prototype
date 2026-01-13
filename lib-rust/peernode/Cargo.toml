@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 common = { package = "syneroym-common", path = "../common" }
 net = { package = "syneroym-net", path = "../net" }
+net-iroh = { package = "syneroym-net-iroh", path = "../net-iroh" }
 anyhow.workspace = true
 tokio.workspace = true
 tracing.workspace = true

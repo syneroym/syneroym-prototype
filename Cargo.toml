@@ -23,6 +23,7 @@ repository = "https://github.com/syneroym/syneroym"
 [workspace.dependencies]
 common = { package = "syneroym-common", path = "lib-rust/common" }
 net = { package = "syneroym-net", path = "lib-rust/net" }
+net-iroh = { package = "syneroym-net-iroh", path = "lib-rust/net-iroh" }
 peernode = { package = "syneroym-peernode", path = "lib-rust/peernode" }
 
 # Common external dependencies
