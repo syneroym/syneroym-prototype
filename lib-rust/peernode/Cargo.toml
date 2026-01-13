@@ -1,0 +1,13 @@
+[package]
+name = "syneroym-peernode"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+common = { package = "syneroym-common", path = "../common" }
+net = { package = "syneroym-net", path = "../net" }
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true

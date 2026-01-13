@@ -1,8 +1,8 @@
 use common::config::Config;
 use anyhow::Result;
 
-pub async fn start_peer(config: Config) -> Result<()> {
-    println!("Starting peer with config: {:?}", config.http_txp);
+pub async fn init(config: &Config) -> Result<()> {
+    println!("Initializing networking layer...");
     
     if let Some(iroh_config) = &config.iroh_comm {
         println!("Iroh communication enabled.");
@@ -12,7 +12,9 @@ pub async fn start_peer(config: Config) -> Result<()> {
         println!("Iroh communication disabled.");
     }
 
-    // TODO: Initialize Iroh node and HTTP transport here
+    if config.http_txp {
+        println!("HTTP transport enabled.");
+    }
 
     Ok(())
 }

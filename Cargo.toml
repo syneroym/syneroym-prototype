@@ -23,6 +23,7 @@ repository = "https://github.com/syneroym/syneroym"
 [workspace.dependencies]
 common = { package = "syneroym-common", path = "lib-rust/common" }
 net = { package = "syneroym-net", path = "lib-rust/net" }
+peernode = { package = "syneroym-peernode", path = "lib-rust/peernode" }
 
 # Common external dependencies
 clap = { version = "4.5", features = ["derive"] }
