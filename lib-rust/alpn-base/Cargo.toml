@@ -1,0 +1,12 @@
+[package]
+name = "syneroym-alpn-base"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+common = { package = "syneroym-common", path = "../common" }
+rpc = { package = "syneroym-rpc", path = "../rpc" }
+anyhow.workspace = true
+async-trait = "0.1"

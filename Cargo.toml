@@ -24,6 +24,9 @@ repository = "https://github.com/syneroym/syneroym"
 common = { package = "syneroym-common", path = "lib-rust/common" }
 net = { package = "syneroym-net", path = "lib-rust/net" }
 net-iroh = { package = "syneroym-net-iroh", path = "lib-rust/net-iroh" }
+alpn-http = { package = "syneroym-alpn-http", path = "lib-rust/alpn-http" }
+alpn-base = { package = "syneroym-alpn-base", path = "lib-rust/alpn-base" }
+rpc = { package = "syneroym-rpc", path = "lib-rust/rpc" }
 peernode = { package = "syneroym-peernode", path = "lib-rust/peernode" }
 
 # Common external dependencies

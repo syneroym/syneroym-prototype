@@ -9,6 +9,7 @@ license.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 anyhow.workspace = true
+async-trait = "0.1.89"
 
 [dev-dependencies]
 divan = "0.1"

@@ -9,6 +9,10 @@ license.workspace = true
 common = { package = "syneroym-common", path = "../common" }
 net = { package = "syneroym-net", path = "../net" }
 net-iroh = { package = "syneroym-net-iroh", path = "../net-iroh" }
+alpn-http = { package = "syneroym-alpn-http", path = "../alpn-http" }
+rpc = { package = "syneroym-rpc", path = "../rpc" }
+alpn-base = { package = "syneroym-alpn-base", path = "../alpn-base" }
 anyhow.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+rusqlite = "0.38.0"

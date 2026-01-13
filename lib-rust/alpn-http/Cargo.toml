@@ -1,5 +1,5 @@
 [package]
-name = "syneroym-net-iroh"
+name = "syneroym-alpn-http"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,4 +10,4 @@ common.workspace = true
 rpc.workspace = true
 alpn-base.workspace = true
 anyhow.workspace = true
-tokio.workspace = true
+async-trait = "0.1"

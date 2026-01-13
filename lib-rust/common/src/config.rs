@@ -9,6 +9,8 @@ pub struct Config {
     pub enabled_comms: Vec<String>,
     /// List of ALPN protocols to accept/handle.
     pub alpn_protocols: Vec<String>,
+    /// Path to the local data store (rqlite/sqlite).
+    pub data_store_path: PathBuf,
 }
 
 impl Default for Config {
@@ -17,6 +19,7 @@ impl Default for Config {
             comm_iroh: Some(IrohCommConfig::default()),
             enabled_comms: vec!["iroh".to_string()],
             alpn_protocols: vec![],
+            data_store_path: PathBuf::from("syneroym_data.db"),
         }
     }
 }
@@ -40,4 +43,11 @@ impl Default for IrohCommConfig {
             rpc_port: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ServiceConfig {
+    pub service_key: String,
+    pub app_layer_protocol: String,
+    pub service_image_manifest_ref: String,
 }
