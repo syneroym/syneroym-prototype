@@ -1,9 +1,10 @@
 use anyhow::Result;
 use app_host::ServiceRpc;
-use protocol_base::ProtocolHandler;
 use async_trait::async_trait;
+use protocol_base::ProtocolHandler;
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub struct HttpHandler;
 
 impl HttpHandler {

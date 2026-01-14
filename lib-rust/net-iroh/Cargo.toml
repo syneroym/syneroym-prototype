@@ -11,3 +11,5 @@ app-host.workspace = true
 protocol-base.workspace = true
 anyhow.workspace = true
 tokio.workspace = true
+iroh = "0.95"
+n0-error = "0.1"
