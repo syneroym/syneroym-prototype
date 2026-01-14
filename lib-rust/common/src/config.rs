@@ -44,10 +44,3 @@ impl Default for IrohCommConfig {
         }
     }
 }
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ServiceConfig {
-    pub service_key: String,
-    pub app_layer_protocol: String,
-    pub service_image_manifest_ref: String,
-}

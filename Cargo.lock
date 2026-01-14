@@ -3746,6 +3746,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "syneroym-common",
+ "syneroym-store-interface",
 ]
 
 [[package]]
@@ -3838,6 +3839,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "serde",
  "syneroym-common",
 ]
 

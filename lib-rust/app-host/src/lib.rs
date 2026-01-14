@@ -1,13 +1,13 @@
-use common::config::ServiceConfig;
+use store_interface::ServiceRecord;
 
 #[derive(Debug, Clone)]
 pub struct ServiceRpc {
-    pub config: ServiceConfig,
+    pub config: ServiceRecord,
     // Add RPC client/connection details here
 }
 
 impl ServiceRpc {
-    pub fn new(config: ServiceConfig) -> Self {
+    pub fn new(config: ServiceRecord) -> Self {
         Self { config }
     }
 }

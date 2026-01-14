@@ -9,3 +9,4 @@ license.workspace = true
 common = { package = "syneroym-common", path = "../common" }
 anyhow.workspace = true
 async-trait = "0.1"
+serde = { workspace = true, features = ["derive"] }

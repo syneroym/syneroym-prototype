@@ -1,11 +1,11 @@
 use protocol_base::ProtocolHandler;
 use anyhow::Result;
-use common::config::{Config, ServiceConfig};
+use common::config::Config;
 use app_host::ServiceRpc;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
-use store_interface::ServiceStore;
+use store_interface::{ServiceStore, ServiceRecord};
 
 pub struct PeerNode {
     config: Config,
@@ -53,16 +53,30 @@ impl PeerNode {
         Ok(())
     }
 
-    async fn fetch_services(&self) -> Result<Vec<ServiceConfig>> {
+    async fn fetch_services(&self) -> Result<Vec<ServiceRecord>> {
         info!(
             "Reading services from data store...",
         );
-        self.store.get_services().await
+        let mut services = self.store.get_services().await?;
+
+        // Add test services
+        services.push(ServiceRecord {
+            service_key: "test1".to_string(),
+            app_layer_protocol: "http".to_string(),
+            service_image_manifest_ref: "local-http/test1".to_string(),
+        });
+        services.push(ServiceRecord {
+            service_key: "test2".to_string(),
+            app_layer_protocol: "http".to_string(),
+            service_image_manifest_ref: "local-http/test2".to_string(),
+        });
+
+        Ok(services)
     }
 
     async fn init_service_rpc(
         &self,
-        services: &[ServiceConfig],
+        services: &[ServiceRecord],
     ) -> Result<HashMap<String, ServiceRpc>> {
         info!(
             "Initializing Service RPC for {} services...",
@@ -81,10 +95,10 @@ impl PeerNode {
 
     async fn init_protocol_handlers(
         &self,
-        services: &[ServiceConfig],
+        services: &[ServiceRecord],
         service_rpcs: HashMap<String, ServiceRpc>,
     ) -> Result<Vec<Arc<dyn ProtocolHandler>>> {
-        let mut services_by_protocol: HashMap<String, Vec<ServiceConfig>> = HashMap::new();
+        let mut services_by_protocol: HashMap<String, Vec<ServiceRecord>> = HashMap::new();
 
         for service in services {
             services_by_protocol

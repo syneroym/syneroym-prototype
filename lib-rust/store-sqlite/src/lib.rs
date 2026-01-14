@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use common::config::ServiceConfig;
+use store_interface::ServiceRecord;
 use rusqlite::Connection;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -36,14 +36,14 @@ impl SqliteStore {
 
 #[async_trait]
 impl ServiceStore for SqliteStore {
-    async fn get_services(&self) -> Result<Vec<ServiceConfig>> {
+    async fn get_services(&self) -> Result<Vec<ServiceRecord>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT service_key, app_layer_protocol, service_image_manifest_ref FROM services",
         )?;
         
         let service_iter = stmt.query_map([], |row| {
-            Ok(ServiceConfig {
+            Ok(ServiceRecord {
                 service_key: row.get(0)?,
                 app_layer_protocol: row.get(1)?,
                 service_image_manifest_ref: row.get(2)?,

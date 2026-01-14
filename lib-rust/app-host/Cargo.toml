@@ -7,4 +7,5 @@ license.workspace = true
 
 [dependencies]
 common = { package = "syneroym-common", path = "../common" }
+store-interface = { package = "syneroym-store-interface", path = "../store-interface" }
 anyhow.workspace = true
