@@ -1,7 +1,9 @@
 use anyhow::Result;
+use app_host::ServiceRpc;
 use async_trait::async_trait;
-use rpc::ServiceRpc;
 use std::collections::HashMap;
+
+pub const SYNEROYM_ALPN: &[u8] = b"syneroym/1.0";
 
 #[async_trait]
 pub trait ProtocolHandler: Send + Sync {

@@ -1,13 +1,11 @@
 [package]
-name = "syneroym-net-iroh"
+name = "syneroym-store-interface"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
-common.workspace = true
-app-host.workspace = true
-protocol-base.workspace = true
+common = { package = "syneroym-common", path = "../common" }
 anyhow.workspace = true
-tokio.workspace = true
+async-trait = "0.1"

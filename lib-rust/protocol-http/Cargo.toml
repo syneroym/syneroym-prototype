@@ -1,10 +1,13 @@
 [package]
-name = "syneroym-rpc"
+name = "syneroym-protocol-http"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
-common = { package = "syneroym-common", path = "../common" }
+common.workspace = true
+app-host.workspace = true
+protocol-base.workspace = true
 anyhow.workspace = true
+async-trait = "0.1"

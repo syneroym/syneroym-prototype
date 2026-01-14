@@ -1,13 +1,12 @@
 [package]
-name = "syneroym-alpn-http"
+name = "syneroym-protocol-base"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
-common.workspace = true
-rpc.workspace = true
-alpn-base.workspace = true
+common = { package = "syneroym-common", path = "../common" }
+app-host = { package = "syneroym-app-host", path = "../app-host" }
 anyhow.workspace = true
 async-trait = "0.1"

@@ -1,5 +1,5 @@
 [package]
-name = "syneroym-alpn-base"
+name = "syneroym-store-sqlite"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -7,6 +7,8 @@ license.workspace = true
 
 [dependencies]
 common = { package = "syneroym-common", path = "../common" }
-rpc = { package = "syneroym-rpc", path = "../rpc" }
+store-interface = { package = "syneroym-store-interface", path = "../store-interface" }
 anyhow.workspace = true
 async-trait = "0.1"
+rusqlite = { version = "0.32.1", features = ["bundled"] }
+tracing.workspace = true

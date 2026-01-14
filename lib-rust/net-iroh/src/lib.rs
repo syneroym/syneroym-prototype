@@ -1,5 +1,5 @@
 use common::config::Config;
-use alpn_base::ProtocolHandler;
+use protocol_base::{ProtocolHandler, SYNEROYM_ALPN};
 use anyhow::Result;
 use std::sync::Arc;
 
@@ -11,6 +11,7 @@ pub async fn init(config: &Config, handlers: Vec<Arc<dyn ProtocolHandler>>) -> R
              println!("Using secret key at: {:?}", secret);
         }
         
+        println!("Iroh listening on ALPN: {:?}", std::str::from_utf8(SYNEROYM_ALPN));
         println!("Iroh passing connections to handlers:");
         for handler in handlers {
             println!(" - {}", handler.protocol_id());

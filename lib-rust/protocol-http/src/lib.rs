@@ -1,6 +1,6 @@
 use anyhow::Result;
-use rpc::ServiceRpc;
-use alpn_base::ProtocolHandler;
+use app_host::ServiceRpc;
+use protocol_base::ProtocolHandler;
 use async_trait::async_trait;
 use std::collections::HashMap;
 
