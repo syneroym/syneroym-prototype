@@ -1,8 +1,11 @@
 import { createSignal } from 'solid-js';
+import RecentComments from './RecentComments';
 
 function App() {
   const [comment, setComment] = createSignal('');
   const [status, setStatus] = createSignal('');
+  // Trigger to refresh the recent comments list
+  const [refreshTrigger, setRefreshTrigger] = createSignal(0);
 
   const handleSubmit = async (e: Event) => {
     e.preventDefault();
@@ -18,6 +21,8 @@ function App() {
       if (response.ok) {
         setStatus('Comment saved!');
         setComment('');
+        // Trigger refresh of the comments list
+        setRefreshTrigger(t => t + 1);
       } else {
         setStatus('Error saving comment.');
       }
@@ -28,7 +33,7 @@ function App() {
   };
 
   return (
-    <div style="padding: 20px; font-family: sans-serif;">
+    <div style="padding: 20px; font-family: sans-serif; max-width: 600px; margin: 0 auto;">
       <h2>Comments</h2>
       <form onSubmit={handleSubmit}>
         <textarea
@@ -41,6 +46,11 @@ function App() {
         <button type="submit">Submit</button>
       </form>
       {status() && <p>{status()}</p>}
+      
+      <hr style="margin: 20px 0;" />
+      
+      <RecentComments refreshTrigger={refreshTrigger} />
+
       <br />
       <a href="/">Back to Home</a>
     </div>

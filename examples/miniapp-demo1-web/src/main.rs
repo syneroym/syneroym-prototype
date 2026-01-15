@@ -1,16 +1,16 @@
 use axum::{
-    extract::{State, Json},
+    extract::{Json, State},
     http::{header, StatusCode, Uri},
     response::{Html, IntoResponse},
     routing::{get, post},
     Router,
 };
 use clap::Parser;
+use rusqlite::{params, Connection};
 use rust_embed::Embed;
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use rusqlite::{params, Connection};
-use serde::Deserialize;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -24,7 +24,7 @@ struct Args {
     port: u16,
 
     /// Database URL (file path for rusqlite)
-    #[arg(long, default_value = "comments.db")]
+    #[arg(long, default_value = "db/comments.db")]
     database_url: String,
 }
 
@@ -51,13 +51,61 @@ async fn index_handler(State(state): State<Arc<AppState>>) -> Html<String> {
 async fn comments_page_handler() -> impl IntoResponse {
     match Assets::get("dist/index.html") {
         Some(content) => Html(String::from_utf8_lossy(&content.data).to_string()).into_response(),
-        None => (StatusCode::NOT_FOUND, "Comments page not found. Did you build the client?").into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            "Comments page not found. Did you build the client?",
+        )
+            .into_response(),
     }
 }
 
 #[derive(Deserialize)]
 struct CreateComment {
     text: String,
+}
+
+#[derive(Serialize)]
+struct Comment {
+    id: i64,
+    text: String,
+}
+
+async fn get_recent_comments(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let state = state.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let conn = state.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT id, text FROM comments ORDER BY id DESC LIMIT 5")
+            .map_err(|e| e.to_string())?;
+
+        let comments_iter = stmt
+            .query_map([], |row| {
+                Ok(Comment {
+                    id: row.get(0)?,
+                    text: row.get(1)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut comments = Vec::new();
+        for comment in comments_iter {
+            comments.push(comment.map_err(|e| e.to_string())?);
+        }
+        Ok::<_, String>(comments)
+    })
+    .await;
+
+    match result {
+        Ok(Ok(comments)) => Json(comments).into_response(),
+        Ok(Err(e)) => {
+            eprintln!("Database query error: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response()
+        },
+        Err(e) => {
+            eprintln!("Join error: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response()
+        },
+    }
 }
 
 async fn save_comment(
@@ -70,10 +118,7 @@ async fn save_comment(
     // Offload blocking DB operation to a thread pool
     let result = tokio::task::spawn_blocking(move || {
         let conn = state.conn.lock().unwrap();
-        conn.execute(
-            "INSERT INTO comments (text) VALUES (?)",
-            params![text],
-        )
+        conn.execute("INSERT INTO comments (text) VALUES (?)", params![text])
     })
     .await;
 
@@ -82,11 +127,11 @@ async fn save_comment(
         Ok(Err(e)) => {
             eprintln!("Database error: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
-        }
+        },
         Err(e) => {
             eprintln!("Join error: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
-        }
+        },
     }
 }
 
@@ -96,11 +141,8 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
     match Assets::get(path) {
         Some(content) => {
             let mime = mime_guess::from_path(path).first_or_octet_stream();
-            (
-                [(header::CONTENT_TYPE, mime.as_ref())],
-                content.data,
-            ).into_response()
-        }
+            ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
+        },
         None => (StatusCode::NOT_FOUND, "404 Not Found").into_response(),
     }
 }
@@ -129,14 +171,14 @@ async fn main() {
     let app = Router::new()
         .route("/", get(index_handler))
         .route("/comments", get(comments_page_handler))
-        .route("/api/comments", post(save_comment))
+        .route("/api/comments", post(save_comment).get(get_recent_comments))
         .fallback(static_handler)
         .with_state(state);
 
     // Run it with hyper on localhost
     let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
     println!("listening on http://{}", addr);
-    
+
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
