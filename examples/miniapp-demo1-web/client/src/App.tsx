@@ -1,5 +1,6 @@
 import { createSignal } from 'solid-js';
 import RecentComments from './RecentComments';
+import LastUpdated from './LastUpdated';
 
 function App() {
   const [comment, setComment] = createSignal('');
@@ -49,6 +50,7 @@ function App() {
       
       <hr style="margin: 20px 0;" />
       
+      <LastUpdated />
       <RecentComments refreshTrigger={refreshTrigger} />
 
       <br />

@@ -1,5 +1,8 @@
 use axum::{
-    extract::{Json, State},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        Json, State,
+    },
     http::{header, StatusCode, Uri},
     response::{Html, IntoResponse},
     routing::{get, post},
@@ -11,6 +14,7 @@ use rust_embed::Embed;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use tokio::sync::broadcast;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -35,6 +39,7 @@ struct AppState {
     // We use std::sync::Mutex because we are inside spawn_blocking mostly,
     // and rusqlite is blocking.
     conn: Arc<Mutex<Connection>>,
+    tx: broadcast::Sender<String>,
 }
 
 #[derive(Embed)]
@@ -112,18 +117,21 @@ async fn save_comment(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateComment>,
 ) -> impl IntoResponse {
-    let state = state.clone();
+    let state_for_db = state.clone();
     let text = payload.text.clone();
 
     // Offload blocking DB operation to a thread pool
     let result = tokio::task::spawn_blocking(move || {
-        let conn = state.conn.lock().unwrap();
+        let conn = state_for_db.conn.lock().unwrap();
         conn.execute("INSERT INTO comments (text) VALUES (?)", params![text])
     })
     .await;
 
     match result {
-        Ok(Ok(_)) => StatusCode::CREATED,
+        Ok(Ok(_)) => {
+            let _ = state.tx.send(chrono::Utc::now().to_rfc3339());
+            StatusCode::CREATED
+        },
         Ok(Err(e)) => {
             eprintln!("Database error: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
@@ -132,6 +140,37 @@ async fn save_comment(
             eprintln!("Join error: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         },
+    }
+}
+
+async fn websocket_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    ws.on_upgrade(|socket| handle_socket(socket, state))
+}
+
+async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
+    let mut rx = state.tx.subscribe();
+    loop {
+        tokio::select! {
+            Ok(msg) = rx.recv() => {
+                if socket.send(Message::Text(msg.into())).await.is_err() {
+                    break;
+                }
+            }
+            Some(msg) = socket.recv() => {
+                match msg {
+                    Ok(Message::Text(text)) => {
+                        println!("[{}] Received: {}", chrono::Utc::now(), text);
+                    }
+                    Ok(Message::Close(_)) | Err(_) => {
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 }
 
@@ -162,9 +201,12 @@ async fn main() {
     )
     .expect("Failed to create table");
 
+    let (tx, _rx) = broadcast::channel(100);
+
     let state = Arc::new(AppState {
         service_name: args.service_name,
         conn: Arc::new(Mutex::new(conn)),
+        tx,
     });
 
     // Build our application
@@ -172,6 +214,7 @@ async fn main() {
         .route("/", get(index_handler))
         .route("/comments", get(comments_page_handler))
         .route("/api/comments", post(save_comment).get(get_recent_comments))
+        .route("/ws", get(websocket_handler))
         .fallback(static_handler)
         .with_state(state);
 
