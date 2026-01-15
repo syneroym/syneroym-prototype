@@ -27,9 +27,9 @@ struct Args {
     #[arg(long, default_value_t = 3000)]
     port: u16,
 
-    /// Database URL (file path for rusqlite)
-    #[arg(long, default_value = "db/comments.db")]
-    database_url: String,
+    /// Database directory
+    #[arg(long, default_value = "db")]
+    db_dir: String,
 }
 
 #[derive(Clone)]
@@ -190,9 +190,9 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
 async fn main() {
     let args = Args::parse();
 
-    let db_path = args.database_url.trim_start_matches("sqlite:");
+    let db_path = std::path::Path::new(&args.db_dir).join("comments.db");
     // rusqlite creates the file if it doesn't exist by default with Connection::open
-    let conn = Connection::open(db_path).expect("Failed to connect to database");
+    let conn = Connection::open(&db_path).expect("Failed to connect to database");
 
     // Run migration
     conn.execute(
