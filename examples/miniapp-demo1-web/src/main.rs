@@ -1,14 +1,16 @@
 use axum::{
-    extract::State,
+    extract::{State, Json},
     http::{header, StatusCode, Uri},
     response::{Html, IntoResponse},
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use clap::Parser;
 use rust_embed::Embed;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use rusqlite::{params, Connection};
+use serde::Deserialize;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -20,11 +22,19 @@ struct Args {
     /// Port to listen on
     #[arg(long, default_value_t = 3000)]
     port: u16,
+
+    /// Database URL (file path for rusqlite)
+    #[arg(long, default_value = "comments.db")]
+    database_url: String,
 }
 
 #[derive(Clone)]
 struct AppState {
     service_name: String,
+    // Connection is not Sync, so we need Mutex.
+    // We use std::sync::Mutex because we are inside spawn_blocking mostly,
+    // and rusqlite is blocking.
+    conn: Arc<Mutex<Connection>>,
 }
 
 #[derive(Embed)]
@@ -32,7 +42,52 @@ struct AppState {
 struct Assets;
 
 async fn index_handler(State(state): State<Arc<AppState>>) -> Html<String> {
-    Html(format!("<h1>Hello world from {}</h1>", state.service_name))
+    Html(format!(
+        "<h1>Hello world from {}</h1><p><a href='/comments'>Go to Comments</a></p>",
+        state.service_name
+    ))
+}
+
+async fn comments_page_handler() -> impl IntoResponse {
+    match Assets::get("dist/index.html") {
+        Some(content) => Html(String::from_utf8_lossy(&content.data).to_string()).into_response(),
+        None => (StatusCode::NOT_FOUND, "Comments page not found. Did you build the client?").into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct CreateComment {
+    text: String,
+}
+
+async fn save_comment(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<CreateComment>,
+) -> impl IntoResponse {
+    let state = state.clone();
+    let text = payload.text.clone();
+
+    // Offload blocking DB operation to a thread pool
+    let result = tokio::task::spawn_blocking(move || {
+        let conn = state.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO comments (text) VALUES (?)",
+            params![text],
+        )
+    })
+    .await;
+
+    match result {
+        Ok(Ok(_)) => StatusCode::CREATED,
+        Ok(Err(e)) => {
+            eprintln!("Database error: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+        Err(e) => {
+            eprintln!("Join error: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
 }
 
 async fn static_handler(uri: Uri) -> impl IntoResponse {
@@ -53,13 +108,28 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+
+    let db_path = args.database_url.trim_start_matches("sqlite:");
+    // rusqlite creates the file if it doesn't exist by default with Connection::open
+    let conn = Connection::open(db_path).expect("Failed to connect to database");
+
+    // Run migration
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS comments (id INTEGER PRIMARY KEY, text TEXT)",
+        [],
+    )
+    .expect("Failed to create table");
+
     let state = Arc::new(AppState {
         service_name: args.service_name,
+        conn: Arc::new(Mutex::new(conn)),
     });
 
-    // Build our application with a single route
+    // Build our application
     let app = Router::new()
         .route("/", get(index_handler))
+        .route("/comments", get(comments_page_handler))
+        .route("/api/comments", post(save_comment))
         .fallback(static_handler)
         .with_state(state);
 
