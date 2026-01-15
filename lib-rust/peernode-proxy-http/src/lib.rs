@@ -1,19 +1,21 @@
 use axum::{
     body::Body,
     extract::{State, WebSocketUpgrade},
+    http::Uri,
     response::{IntoResponse, Response},
     routing::any,
     Router,
-    http::Uri,
 };
+use futures::{SinkExt, StreamExt};
 use http_body_util::BodyExt;
-use iroh::{Endpoint, PublicKey};
 use iroh::endpoint::{Connection, RecvStream, SendStream};
+use iroh::{Endpoint, PublicKey};
 use protocol_base::SYNEROYM_ALPN;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
+use tokio_util::io::ReaderStream;
 use tracing::{error, info};
 
 type NodeId = PublicKey;
@@ -24,11 +26,14 @@ struct AppState {
 }
 
 pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
-    info!("Starting PeerNode HTTP Proxy on port {}, target: {}", port, target);
-    
+    info!(
+        "Starting PeerNode HTTP Proxy on port {}, target: {}",
+        port, target
+    );
+
     // Bind a new local iroh endpoint for the proxy client
     let endpoint = Endpoint::bind().await?;
-    
+
     let state = Arc::new(AppState {
         iroh: endpoint,
         target,
@@ -41,7 +46,7 @@ pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = TcpListener::bind(addr).await?;
-    
+
     info!("PeerNode HTTP Proxy listening on {}", addr);
     axum::serve(listener, app).await?;
     Ok(())
@@ -64,65 +69,127 @@ async fn ws_handler(
     uri: Uri,
 ) -> Response {
     let path = uri.path();
-    let service_name = match extract_service_and_path(path) {
-        Some((s, _)) => s, // For WS, we just need the service name to connect.
-                           // The path might be relevant if the backend needs it,
-                           // but for now we just connect to the service.
-                           // If we need to send the sub-path to the backend,
-                           // we would need to modify the protocol to send path info.
-                           // The current requirement is "send service name".
-                           // Assuming the backend handles the stream from there.
-                           // Wait, for HTTP proxy we send the request line.
-                           // For WS, we just send service name and then tunnel?
-                           // The prompt says "Need to send over this service_name and length."
-                           // It doesn't explicitly say we need to send the path for WS.
-                           // But usually WS connection URL matters.
-                           // However, `handle_ws` implementation below sends service name then pumps bytes.
-                           // It doesn't send a synthetic HTTP request like `proxy_handler`.
-                           // So I'll just extract the service name.
-        None => return (axum::http::StatusCode::BAD_REQUEST, "Missing service name in path").into_response(),
+    let (service_name, remaining_path) = match extract_service_and_path(path) {
+        Some(res) => res,
+        None => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                "Missing service name in path",
+            )
+                .into_response()
+        },
     };
 
-    ws.on_upgrade(move |socket| handle_ws(socket, state, service_name))
+    let full_path = if let Some(query) = uri.query() {
+        format!("{}?{}", remaining_path, query)
+    } else {
+        remaining_path
+    };
+
+    ws.on_upgrade(move |socket| handle_ws(socket, state, service_name, full_path))
 }
 
-async fn handle_ws(mut socket: axum::extract::ws::WebSocket, state: Arc<AppState>, service_name: String) {
+async fn handle_ws(
+    socket: axum::extract::ws::WebSocket,
+    state: Arc<AppState>,
+    service_name: String,
+    path: String,
+) {
     // Connecting to Iroh
     let connection: Connection = match state.iroh.connect(state.target, SYNEROYM_ALPN).await {
         Ok(c) => c,
         Err(e) => {
             error!("Failed to connect to iroh target: {}", e);
             return;
-        }
+        },
     };
-    
-    let (mut send, _recv): (SendStream, RecvStream) = match connection.open_bi().await {
+
+    let (mut iroh_sender, iroh_recv): (SendStream, RecvStream) = match connection.open_bi().await {
         Ok(bi) => bi,
         Err(e) => {
             error!("Failed to open bi stream: {}", e);
             return;
-        }
+        },
     };
 
     // Send Service Name
     let name = service_name.as_bytes();
-    if let Err(e) = send.write_u8(name.len() as u8).await {
+    if let Err(e) = iroh_sender.write_u8(name.len() as u8).await {
         error!("Failed to write service name len: {}", e);
         return;
     }
-    if let Err(e) = send.write_all(name).await {
+    if let Err(e) = iroh_sender.write_all(name).await {
         error!("Failed to write service name: {}", e);
         return;
     }
 
-    info!("WS connection opened for service: {}", service_name);
-    while let Some(msg) = socket.recv().await {
-        if let Ok(msg) = msg {
-             info!("Received WS msg: {:?}", msg);
-             // Placeholder for forwarding
-        } else {
-            break;
+    // Send Path/Handshake to backend (simulated)
+    // This allows the backend to see the request path and protocol
+    let handshake = format!(
+        "GET {} HTTP/1.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n",
+        path
+    );
+    if let Err(e) = iroh_sender.write_all(handshake.as_bytes()).await {
+        error!("Failed to write handshake: {}", e);
+        return;
+    }
+
+    info!(
+        "WS connection opened for service: {}, path: {}",
+        service_name, path
+    );
+
+    let (mut ws_sender, mut ws_receiver) = socket.split();
+
+    // Downstream: Iroh -> WS
+    // Read bytes from Iroh and send as Binary frames to WS
+    let downstream = async {
+        let mut reader = ReaderStream::new(iroh_recv);
+        while let Some(chunk) = reader.next().await {
+            match chunk {
+                Ok(bytes) => {
+                    if let Err(e) = ws_sender
+                        .send(axum::extract::ws::Message::Binary(bytes.into()))
+                        .await
+                    {
+                        error!("Failed to send to WS client: {}", e);
+                        break;
+                    }
+                },
+                Err(e) => {
+                    error!("Error reading from Iroh: {}", e);
+                    break;
+                },
+            }
         }
+    };
+
+    // Upstream: WS -> Iroh
+    // Read messages from WS and write payload to Iroh
+    let upstream = async {
+        while let Some(msg) = ws_receiver.next().await {
+            match msg {
+                Ok(msg) => {
+                    // Extract payload bytes (Text or Binary)
+                    let data = msg.into_data();
+                    if !data.is_empty() {
+                        if let Err(e) = iroh_sender.write_all(&data).await {
+                            error!("Failed to write to Iroh: {}", e);
+                            break;
+                        }
+                    }
+                },
+                Err(e) => {
+                    error!("WS client error: {}", e);
+                    break;
+                },
+            }
+        }
+    };
+
+    tokio::select! {
+        _ = downstream => {},
+        _ = upstream => {},
     }
 }
 
@@ -132,30 +199,56 @@ async fn proxy_handler(
 ) -> Response {
     let uri = req.uri().clone();
     let path = uri.path();
-    
+
     let (service_name, remaining_path) = match extract_service_and_path(path) {
         Some(res) => res,
-        None => return (axum::http::StatusCode::BAD_REQUEST, "Missing service name in path").into_response(),
+        None => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                "Missing service name in path",
+            )
+                .into_response()
+        },
     };
 
     // 1. Connect to Iroh Target
     let connection: Connection = match state.iroh.connect(state.target, SYNEROYM_ALPN).await {
         Ok(c) => c,
-        Err(e) => return (axum::http::StatusCode::BAD_GATEWAY, format!("Connect error: {}", e)).into_response(),
+        Err(e) => {
+            return (
+                axum::http::StatusCode::BAD_GATEWAY,
+                format!("Connect error: {}", e),
+            )
+                .into_response()
+        },
     };
 
     let (mut send, recv): (SendStream, RecvStream) = match connection.open_bi().await {
         Ok(bi) => bi,
-        Err(e) => return (axum::http::StatusCode::BAD_GATEWAY, format!("Stream error: {}", e)).into_response(),
+        Err(e) => {
+            return (
+                axum::http::StatusCode::BAD_GATEWAY,
+                format!("Stream error: {}", e),
+            )
+                .into_response()
+        },
     };
 
     // 2. Send Service Name
     let name = service_name.as_bytes();
     if let Err(e) = send.write_u8(name.len() as u8).await {
-         return (axum::http::StatusCode::BAD_GATEWAY, format!("Write error: {}", e)).into_response();
+        return (
+            axum::http::StatusCode::BAD_GATEWAY,
+            format!("Write error: {}", e),
+        )
+            .into_response();
     }
     if let Err(e) = send.write_all(name).await {
-         return (axum::http::StatusCode::BAD_GATEWAY, format!("Write error: {}", e)).into_response();
+        return (
+            axum::http::StatusCode::BAD_GATEWAY,
+            format!("Write error: {}", e),
+        )
+            .into_response();
     }
 
     // 3. Serialize HTTP Request to Iroh Stream
@@ -176,21 +269,29 @@ async fn proxy_handler(
         _ => "HTTP/1.1",
     };
 
-    let request_line = format!("{} {} {}\r\n", method, path_to_forward, version);
+    let request_line = format!(
+        "{} {} {}
+",
+        method, path_to_forward, version
+    );
     if let Err(_) = send.write_all(request_line.as_bytes()).await {
         return axum::http::StatusCode::BAD_GATEWAY.into_response();
     }
 
     for (name, value) in req.headers() {
         if let Ok(v) = value.to_str() {
-            let header_line = format!("{}: {}\r\n", name, v);
+            let header_line = format!(
+                "{}: {}
+",
+                name, v
+            );
             if let Err(_) = send.write_all(header_line.as_bytes()).await {
-                 return axum::http::StatusCode::BAD_GATEWAY.into_response();
+                return axum::http::StatusCode::BAD_GATEWAY.into_response();
             }
         }
     }
     if let Err(_) = send.write_all(b"\r\n").await {
-         return axum::http::StatusCode::BAD_GATEWAY.into_response();
+        return axum::http::StatusCode::BAD_GATEWAY.into_response();
     }
 
     // 4. Stream Body
