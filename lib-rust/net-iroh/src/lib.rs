@@ -114,8 +114,6 @@ async fn handle_stream((mut send, mut recv): (SendStream, RecvStream)) -> Result
         },
     };
 
-    //send.finish()?;
-
     // --- Connect to backend HTTP server ---
     let mut backend = TcpStream::connect(backend_addr).await?;
 
@@ -137,5 +135,8 @@ async fn handle_stream((mut send, mut recv): (SendStream, RecvStream)) -> Result
     if let Err(e) = tokio::try_join!(client_to_backend, backend_to_client) {
         eprintln!("stream error: {e:?}");
     }
+
+    send.finish()?;
+
     Ok(())
 }
