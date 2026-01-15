@@ -1,11 +1,12 @@
-use protocol_base::ProtocolHandler;
 use anyhow::Result;
-use common::config::Config;
 use app_host::ServiceRpc;
+use common::config::Config;
+use protocol_base::ProtocolHandler;
 use std::collections::HashMap;
+
 use std::sync::Arc;
+use store_interface::{ServiceRecord, ServiceStore};
 use tracing::info;
-use store_interface::{ServiceStore, ServiceRecord};
 
 pub struct PeerNode {
     config: Config,
@@ -15,7 +16,9 @@ pub struct PeerNode {
 impl PeerNode {
     pub async fn new(config: Config) -> Result<Self> {
         // Initialize the store based on configuration (defaulting to SQLite for now)
-        let store = Arc::new(store_sqlite::SqliteStore::new(config.data_store_path.clone())?);
+        let store = Arc::new(store_sqlite::SqliteStore::new(
+            config.data_store_path.clone(),
+        )?);
         Ok(Self { config, store })
     }
 
@@ -32,31 +35,45 @@ impl PeerNode {
         let handlers = self.init_protocol_handlers(&services, service_rpcs).await?;
 
         // 4. Initialize Networking
-        self.init_networking(handlers).await?;
+        let router_opt = self.init_networking(handlers).await?;
+
+        if let Some(router) = router_opt {
+            let endpoint = router.endpoint();
+            // wait for the endpoint to be online
+            router.endpoint().online().await;
+
+            let node_id = endpoint.secret_key().public();
+            info!("Starting PeerNode Proxy HTTP...");
+            peernode_proxy_http::start(3000, node_id).await?;
+
+            // This makes sure the endpoint in the router is closed properly and connections close gracefully
+            router.shutdown().await?;
+        }
 
         info!("PeerNode bootstrapped successfully.");
         Ok(())
     }
 
-    async fn init_networking(&self, handlers: Vec<Arc<dyn ProtocolHandler>>) -> Result<()> {
+    async fn init_networking(
+        &self,
+        handlers: Vec<Arc<dyn ProtocolHandler>>,
+    ) -> Result<Option<iroh::protocol::Router>> {
         for comm in &self.config.enabled_comms {
             match comm.as_str() {
                 "iroh" => {
                     info!("Initializing Iroh interface...");
-                    net_iroh::init(&self.config, handlers.clone()).await?;
+                    return net_iroh::init(&self.config, handlers.clone()).await;
                 },
                 _ => {
                     info!("Unknown or unimplemented communication interface: {}", comm);
                 },
             }
         }
-        Ok(())
+        Ok(None)
     }
 
     async fn fetch_services(&self) -> Result<Vec<ServiceRecord>> {
-        info!(
-            "Reading services from data store...",
-        );
+        info!("Reading services from data store...",);
         let mut services = self.store.get_services().await?;
 
         // Add test services

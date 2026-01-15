@@ -7,13 +7,15 @@ use iroh::{
 };
 use n0_error::e;
 use n0_error::AnyError;
-use n0_error::StdResultExt;
 use protocol_base::{ProtocolHandler, SYNEROYM_ALPN};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-pub async fn init(config: &Config, handlers: Vec<Arc<dyn ProtocolHandler>>) -> Result<()> {
+pub async fn init(
+    config: &Config,
+    handlers: Vec<Arc<dyn ProtocolHandler>>,
+) -> Result<Option<Router>> {
     for handler in &handlers[..] {
         println!(" - {}", handler.protocol_id());
     }
@@ -32,13 +34,14 @@ pub async fn init(config: &Config, handlers: Vec<Arc<dyn ProtocolHandler>>) -> R
             std::str::from_utf8(SYNEROYM_ALPN)
         );
         println!("Iroh passing connections to handlers:");
-        // wait for the endpoint to be online
-        router.endpoint().online().await;
 
-        // This makes sure the endpoint in the router is closed properly and connections close gracefully
-        router.shutdown().await.anyerr()?;
+        // Wait for the endpoint to be online (non-blocking if we just await the future, but we want to return it)
+        // Actually, let's just return the router. The caller can wait if they want, or just hold it.
+        // router.endpoint().online().await;
+
+        return Ok(Some(router));
     }
-    Ok(())
+    Ok(None)
 }
 
 // Taken from the Iroh echo example: https://github.com/n0-computer/iroh/blob/main/iroh/examples/echo.rs
@@ -100,8 +103,8 @@ async fn handle_stream((mut send, mut recv): (SendStream, RecvStream)) -> Result
         },
     };
     let backend_addr = match service.as_str() {
-        "users" => "127.0.0.1:3001",
-        "orders" => "127.0.0.1:3002",
+        "demo3001" => "127.0.0.1:3000",
+        "demo3002" => "127.0.0.1:3002",
         _ => {
             match send.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n").await {
                 Ok(o) => return Ok(o),
