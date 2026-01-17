@@ -103,7 +103,7 @@ async fn handle_stream((mut send, mut recv): (SendStream, RecvStream)) -> Result
         },
     };
     let backend_addr = match service.as_str() {
-        "demo3001" => "127.0.0.1:3000",
+        "demo3001" => "127.0.0.1:3001",
         "demo3002" => "127.0.0.1:3002",
         _ => {
             match send.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n").await {
@@ -124,13 +124,19 @@ async fn handle_stream((mut send, mut recv): (SendStream, RecvStream)) -> Result
     let (mut br, mut bw) = backend.split();
 
     let client_to_backend = async {
-        tokio::io::copy(&mut recv, &mut bw).await?;
+        println!(
+            "--> wrote to service {} bytes",
+            tokio::io::copy(&mut recv, &mut bw).await?,
+        );
         bw.shutdown().await?;
         Ok::<_, anyhow::Error>(())
     };
 
     let backend_to_client = async {
-        tokio::io::copy(&mut br, &mut send).await?;
+        println!(
+            "<-- wrote back to iroh {} bytes",
+            tokio::io::copy(&mut br, &mut send).await?
+        );
         send.finish()?;
         Ok::<_, anyhow::Error>(())
     };
@@ -138,8 +144,6 @@ async fn handle_stream((mut send, mut recv): (SendStream, RecvStream)) -> Result
     if let Err(e) = tokio::try_join!(client_to_backend, backend_to_client) {
         eprintln!("stream error: {e:?}");
     }
-
-    send.finish()?;
 
     Ok(())
 }

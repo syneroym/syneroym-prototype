@@ -42,9 +42,9 @@ impl PeerNode {
             // wait for the endpoint to be online
             router.endpoint().online().await;
 
-            let node_id = endpoint.secret_key().public();
+            let node_addr = endpoint.addr();
             info!("Starting PeerNode Proxy HTTP...");
-            peernode_proxy_http::start(3000, node_id).await?;
+            peernode_proxy_http::start(3000, node_addr).await?;
 
             // This makes sure the endpoint in the router is closed properly and connections close gracefully
             router.shutdown().await?;

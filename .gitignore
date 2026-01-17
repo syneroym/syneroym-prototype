@@ -9,3 +9,6 @@ node_modules
 # Coverage
 scripts/coverage
 lcov.info
+
+# Syneroym app Data
+**syneroym_data**

@@ -4,5 +4,5 @@ static/dist/
 # Dependencies (redundant if root .gitignore has it, but good practice for standalone projects)
 client/node_modules/
 
-# Database files
-db
+# Data dir
+data

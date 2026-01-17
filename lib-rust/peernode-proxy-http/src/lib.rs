@@ -9,7 +9,7 @@ use axum::{
 use futures::{SinkExt, StreamExt};
 use http_body_util::BodyExt;
 use iroh::endpoint::{Connection, RecvStream, SendStream};
-use iroh::{Endpoint, PublicKey};
+use iroh::{Endpoint, EndpointAddr};
 use protocol_base::SYNEROYM_ALPN;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -18,7 +18,7 @@ use tokio::net::TcpListener;
 use tokio_util::io::ReaderStream;
 use tracing::{error, info};
 
-type NodeId = PublicKey;
+type NodeId = EndpointAddr;
 
 struct AppState {
     iroh: Endpoint,
@@ -27,7 +27,7 @@ struct AppState {
 
 pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
     info!(
-        "Starting PeerNode HTTP Proxy on port {}, target: {}",
+        "Starting PeerNode HTTP Proxy on port {}, target: {:?}",
         port, target
     );
 
@@ -96,7 +96,7 @@ async fn handle_ws(
     path: String,
 ) {
     // Connecting to Iroh
-    let connection: Connection = match state.iroh.connect(state.target, SYNEROYM_ALPN).await {
+    let connection: Connection = match state.iroh.connect(state.target.clone(), SYNEROYM_ALPN).await {
         Ok(c) => c,
         Err(e) => {
             error!("Failed to connect to iroh target: {}", e);
@@ -212,7 +212,7 @@ async fn proxy_handler(
     };
 
     // 1. Connect to Iroh Target
-    let connection: Connection = match state.iroh.connect(state.target, SYNEROYM_ALPN).await {
+    let connection: Connection = match state.iroh.connect(state.target.clone(), SYNEROYM_ALPN).await {
         Ok(c) => c,
         Err(e) => {
             return (
