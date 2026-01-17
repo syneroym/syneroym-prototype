@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-axum = { version = "0.8.8", features = ["ws"] }
+axum = { version = "0.8.8", features = ["ws", "multipart"] }
 clap = { workspace = true }
 mime_guess = "2.0.5"
 rust-embed = "8.11.0"

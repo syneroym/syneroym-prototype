@@ -1,6 +1,7 @@
 import { createSignal } from 'solid-js';
 import RecentComments from './RecentComments';
 import LastUpdated from './LastUpdated';
+import FilesManager from './FilesManager';
 
 function App() {
   const [comment, setComment] = createSignal('');
@@ -52,11 +53,14 @@ function App() {
       
       <LastUpdated />
       <RecentComments refreshTrigger={refreshTrigger} />
-
+      
+      <hr style="margin: 20px 0;" />
+      
+      <FilesManager />
+      
       <br />
       <a href="/">Back to Home</a>
     </div>
   );
 }
-
 export default App;

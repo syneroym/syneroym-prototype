@@ -1,7 +1,7 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Json, State,
+        Json, State, Multipart, Path,
     },
     http::{header, StatusCode, Uri},
     response::{Html, IntoResponse},
@@ -27,14 +27,15 @@ struct Args {
     #[arg(long, default_value_t = 3000)]
     port: u16,
 
-    /// Database directory
-    #[arg(long, default_value = "db")]
-    db_dir: String,
+    /// Data directory
+    #[arg(long, default_value = "data")]
+    data_dir: String,
 }
 
 #[derive(Clone)]
 struct AppState {
     service_name: String,
+    data_dir: String,
     // Connection is not Sync, so we need Mutex.
     // We use std::sync::Mutex because we are inside spawn_blocking mostly,
     // and rusqlite is blocking.
@@ -48,7 +49,7 @@ struct Assets;
 
 async fn index_handler(State(state): State<Arc<AppState>>) -> Html<String> {
     Html(format!(
-        "<h1>Hello world from {}</h1><p><a href='/comments'>Go to Comments</a></p>",
+        "<h1>Hello world from {}</h1><p><a href='/comments'>Comments etc.</a></p><p><a href='/page1.html'>Static Page 1</a></p>",
         state.service_name
     ))
 }
@@ -143,6 +144,78 @@ async fn save_comment(
     }
 }
 
+#[derive(Serialize)]
+struct FileInfo {
+    name: String,
+    size: u64,
+}
+
+async fn list_files(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let mut files = Vec::new();
+    // Ensure directory exists
+    if let Ok(mut entries) = tokio::fs::read_dir(&state.data_dir).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            if let Ok(metadata) = entry.metadata().await {
+                if metadata.is_file() {
+                    // Filter out the database file
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if !name.ends_with(".db") {
+                         files.push(FileInfo {
+                            name,
+                            size: metadata.len(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Json(files)
+}
+
+async fn upload_file(
+    State(state): State<Arc<AppState>>,
+    mut multipart: Multipart,
+) -> impl IntoResponse {
+    while let Ok(Some(field)) = multipart.next_field().await {
+        if let Some(file_name) = field.file_name() {
+             let file_name = file_name.to_string();
+             // Simple sanitization
+             if file_name.contains("..") || file_name.contains('/') || file_name.contains('\\') {
+                 continue; 
+             }
+             
+             if let Ok(data) = field.bytes().await {
+                 let file_path = std::path::Path::new(&state.data_dir).join(&file_name);
+                 if let Err(e) = tokio::fs::write(&file_path, data).await {
+                     eprintln!("Failed to write file: {}", e);
+                     return StatusCode::INTERNAL_SERVER_ERROR;
+                 }
+             }
+        }
+    }
+    StatusCode::CREATED
+}
+
+async fn download_file(
+    State(state): State<Arc<AppState>>,
+    Path(filename): Path<String>,
+) -> impl IntoResponse {
+    // Security check: ensure path is inside data_dir
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+         return (StatusCode::BAD_REQUEST, "Invalid filename").into_response();
+    }
+
+    let file_path = std::path::Path::new(&state.data_dir).join(&filename);
+
+    match tokio::fs::read(&file_path).await {
+        Ok(file) => {
+             let mime = mime_guess::from_path(&filename).first_or_octet_stream();
+             ([(header::CONTENT_TYPE, mime.as_ref())], file).into_response()
+        },
+        Err(_) => (StatusCode::NOT_FOUND, "File not found").into_response(),
+    }
+}
+
 async fn websocket_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
@@ -190,7 +263,8 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
 async fn main() {
     let args = Args::parse();
 
-    let db_path = std::path::Path::new(&args.db_dir).join("comments.db");
+    std::fs::create_dir_all(&args.data_dir).expect("Failed to create data directory");
+    let db_path = std::path::Path::new(&args.data_dir).join("comments.db");
     // rusqlite creates the file if it doesn't exist by default with Connection::open
     let conn = Connection::open(&db_path).expect("Failed to connect to database");
 
@@ -205,6 +279,7 @@ async fn main() {
 
     let state = Arc::new(AppState {
         service_name: args.service_name,
+        data_dir: args.data_dir.clone(),
         conn: Arc::new(Mutex::new(conn)),
         tx,
     });
@@ -214,6 +289,8 @@ async fn main() {
         .route("/", get(index_handler))
         .route("/comments", get(comments_page_handler))
         .route("/api/comments", post(save_comment).get(get_recent_comments))
+        .route("/api/files", post(upload_file).get(list_files))
+        .route("/api/files/{filename}", get(download_file))
         .route("/ws", get(websocket_handler))
         .fallback(static_handler)
         .with_state(state);
