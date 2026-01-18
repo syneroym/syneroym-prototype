@@ -94,7 +94,11 @@ async fn common_handler(
         let headers = req
             .headers()
             .iter()
-            .filter_map(|(k, v)| v.to_str().ok().map(|v_str| (k.to_string(), v_str.to_string())))
+            .filter_map(|(k, v)| {
+                v.to_str()
+                    .ok()
+                    .map(|v_str| (k.to_string(), v_str.to_string()))
+            })
             .collect::<Vec<_>>();
 
         let host = req
@@ -128,9 +132,7 @@ async fn ws_handler(
         path
     };
 
-    ws.on_upgrade(move |socket| {
-        handle_ws(socket, state, service_name, full_path, headers, version)
-    })
+    ws.on_upgrade(move |socket| handle_ws(socket, state, service_name, full_path, headers, version))
 }
 
 async fn connect_and_handshake(
@@ -190,8 +192,28 @@ async fn handle_ws(
     // Downstream: Iroh -> WS
     // Read bytes from Iroh and send as Binary frames to WS
     let downstream = async {
-        let mut reader = ReaderStream::new(iroh_recv);
-        while let Some(chunk) = reader.next().await {
+        let mut reader = BufReader::new(iroh_recv);
+        let mut line = String::new();
+
+        // Consume the HTTP handshake response headers from the backend
+        loop {
+            line.clear();
+            match reader.read_line(&mut line).await {
+                Ok(0) => break,
+                Ok(_) => {
+                    if line == "\r\n" || line == "\n" {
+                        break;
+                    }
+                },
+                Err(e) => {
+                    error!("Error reading handshake from Iroh: {}", e);
+                    return;
+                },
+            }
+        }
+
+        let mut stream = ReaderStream::new(reader);
+        while let Some(chunk) = stream.next().await {
             match chunk {
                 Ok(bytes) => {
                     let l = bytes.len();
