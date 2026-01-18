@@ -5703,6 +5703,7 @@ dependencies = [
  "syneroym-common",
  "syneroym-peernode",
  "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]

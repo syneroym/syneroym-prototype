@@ -13,6 +13,7 @@ const APP_ENV_VAR_PREFIX: &str = "SYNEROYM_";
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
     let cli = Cli::parse();
 
     let mut fig = Figment::new().merge(Serialized::defaults(Config::default()));

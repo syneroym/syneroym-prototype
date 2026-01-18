@@ -60,11 +60,7 @@ fn extract_service_from_host(host: &str) -> Option<String> {
 
 fn extract_service_name_or_error(host: Option<&str>) -> Result<String, Response> {
     let host = host.ok_or_else(|| {
-        (
-            axum::http::StatusCode::BAD_REQUEST,
-            "Missing Host header",
-        )
-            .into_response()
+        (axum::http::StatusCode::BAD_REQUEST, "Missing Host header").into_response()
     })?;
 
     extract_service_from_host(host).ok_or_else(|| {
@@ -210,10 +206,7 @@ async fn handle_ws(
         }
     };
 
-    tokio::select! {
-        _ = downstream => {},
-        _ = upstream => {},
-    }
+    tokio::join!(downstream, upstream);
 }
 
 async fn proxy_handler(
@@ -332,7 +325,7 @@ async fn parse_iroh_response(recv: RecvStream) -> Response {
                     let value = value.trim();
                     builder = builder.header(key, value);
                 }
-            }
+            },
             Err(_) => return axum::http::StatusCode::BAD_GATEWAY.into_response(),
         }
     }

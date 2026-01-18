@@ -17,7 +17,10 @@
             },
             "args": [
                 "run-peer"
-            ]
+            ],
+            "env": {
+                "RUST_LOG": "info,peernode_proxy_http=debug"
+            }
         },
         {
             "name": "Debug unit tests in library 'common'",
