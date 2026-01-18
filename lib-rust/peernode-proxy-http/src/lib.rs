@@ -72,18 +72,37 @@ fn extract_service_name_or_error(host: Option<&str>) -> Result<String, Response>
     })
 }
 
+fn map_version_to_string(version: axum::http::Version) -> String {
+    match version {
+        axum::http::Version::HTTP_09 => "HTTP/0.9".to_string(),
+        axum::http::Version::HTTP_10 => "HTTP/1.0".to_string(),
+        axum::http::Version::HTTP_11 => "HTTP/1.1".to_string(),
+        axum::http::Version::HTTP_2 => "HTTP/2.0".to_string(),
+        axum::http::Version::HTTP_3 => "HTTP/3.0".to_string(),
+        _ => "HTTP/1.1".to_string(),
+    }
+}
+
 async fn common_handler(
     State(state): State<Arc<AppState>>,
     ws: Option<WebSocketUpgrade>,
     req: axum::extract::Request,
 ) -> Response {
     if let Some(ws) = ws {
+        let version = map_version_to_string(req.version());
+
+        let headers = req
+            .headers()
+            .iter()
+            .filter_map(|(k, v)| v.to_str().ok().map(|v_str| (k.to_string(), v_str.to_string())))
+            .collect::<Vec<_>>();
+
         let host = req
             .headers()
             .get(axum::http::header::HOST)
             .and_then(|h| h.to_str().ok())
             .map(|s| s.to_string());
-        ws_handler(ws, State(state), req.uri().clone(), host).await
+        ws_handler(ws, State(state), req.uri().clone(), host, headers, version).await
     } else {
         proxy_handler(State(state), req).await
     }
@@ -94,6 +113,8 @@ async fn ws_handler(
     State(state): State<Arc<AppState>>,
     uri: Uri,
     host: Option<String>,
+    headers: Vec<(String, String)>,
+    version: String,
 ) -> Response {
     let service_name = match extract_service_name_or_error(host.as_deref()) {
         Ok(res) => res,
@@ -107,7 +128,9 @@ async fn ws_handler(
         path
     };
 
-    ws.on_upgrade(move |socket| handle_ws(socket, state, service_name, full_path))
+    ws.on_upgrade(move |socket| {
+        handle_ws(socket, state, service_name, full_path, headers, version)
+    })
 }
 
 async fn connect_and_handshake(
@@ -132,6 +155,8 @@ async fn handle_ws(
     state: Arc<AppState>,
     service_name: String,
     path: String,
+    headers: Vec<(String, String)>,
+    version: String,
 ) {
     // Connecting to Iroh and sending Service Name
     let (mut iroh_sender, iroh_recv) = match connect_and_handshake(&state, &service_name).await {
@@ -144,10 +169,12 @@ async fn handle_ws(
 
     // Send Path/Handshake to backend (simulated)
     // This allows the backend to see the request path and protocol
-    let handshake = format!(
-        "GET {} HTTP/1.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n",
-        path
-    );
+    let mut handshake = format!("GET {} {}\r\n", path, version);
+    for (key, val) in headers {
+        handshake.push_str(&format!("{}: {}\r\n", key, val));
+    }
+    handshake.push_str("\r\n");
+
     if let Err(e) = iroh_sender.write_all(handshake.as_bytes()).await {
         error!("Failed to write handshake: {}", e);
         return;
@@ -250,14 +277,7 @@ async fn proxy_handler(
         path.to_string()
     };
 
-    let version = match req.version() {
-        axum::http::Version::HTTP_09 => "HTTP/0.9",
-        axum::http::Version::HTTP_10 => "HTTP/1.0",
-        axum::http::Version::HTTP_11 => "HTTP/1.1",
-        axum::http::Version::HTTP_2 => "HTTP/2.0",
-        axum::http::Version::HTTP_3 => "HTTP/3.0",
-        _ => "HTTP/1.1",
-    };
+    let version = map_version_to_string(req.version());
 
     let request_line = format!("{} {} {}\r\n", method, path_to_forward, version);
     if let Err(_) = send.write_all(request_line.as_bytes()).await {
