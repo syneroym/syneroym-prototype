@@ -223,19 +223,41 @@ async fn websocket_handler(
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WsMessage {
+    comment_update_timestamp: Option<String>,
+    recd_msg: Option<String>,
+}
+
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     let mut rx = state.tx.subscribe();
     loop {
         tokio::select! {
             Ok(msg) = rx.recv() => {
-                if socket.send(Message::Text(msg.into())).await.is_err() {
-                    break;
+                let ws_msg = WsMessage {
+                    comment_update_timestamp: Some(msg),
+                    recd_msg: None,
+                };
+                if let Ok(json) = serde_json::to_string(&ws_msg) {
+                    if socket.send(Message::Text(json.into())).await.is_err() {
+                        break;
+                    }
                 }
             }
             Some(msg) = socket.recv() => {
                 match msg {
                     Ok(Message::Text(text)) => {
                         println!("[{}] Received: {}", chrono::Utc::now(), text);
+                        let ws_msg = WsMessage {
+                            comment_update_timestamp: None,
+                            recd_msg: Some(text.to_string()),
+                        };
+                         if let Ok(json) = serde_json::to_string(&ws_msg) {
+                            if socket.send(Message::Text(json.into())).await.is_err() {
+                                break;
+                            }
+                        }
                     }
                     Ok(Message::Close(_)) | Err(_) => {
                         break;
