@@ -48,22 +48,29 @@ pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn extract_service_and_path(path: &str) -> Option<(String, String)> {
-    let path = path.trim_start_matches('/');
-    if path.is_empty() {
-        return None;
-    }
-    match path.split_once('/') {
-        Some((service, rest)) => Some((service.to_string(), format!("/{}", rest))),
-        None => Some((path.to_string(), "/".to_string())),
+fn extract_service_from_host(host: &str) -> Option<String> {
+    let hostname = host.split(':').next().unwrap_or(host);
+    let parts: Vec<&str> = hostname.split('.').collect();
+    if parts.len() > 1 {
+        Some(parts[0].to_string())
+    } else {
+        None
     }
 }
 
-fn extract_service_info_or_error(path: &str) -> Result<(String, String), Response> {
-    extract_service_and_path(path).ok_or_else(|| {
+fn extract_service_name_or_error(host: Option<&str>) -> Result<String, Response> {
+    let host = host.ok_or_else(|| {
         (
             axum::http::StatusCode::BAD_REQUEST,
-            "Missing service name in path",
+            "Missing Host header",
+        )
+            .into_response()
+    })?;
+
+    extract_service_from_host(host).ok_or_else(|| {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            "Invalid Host header: missing service subdomain",
         )
             .into_response()
     })
@@ -75,7 +82,12 @@ async fn common_handler(
     req: axum::extract::Request,
 ) -> Response {
     if let Some(ws) = ws {
-        ws_handler(ws, State(state), req.uri().clone()).await
+        let host = req
+            .headers()
+            .get(axum::http::header::HOST)
+            .and_then(|h| h.to_str().ok())
+            .map(|s| s.to_string());
+        ws_handler(ws, State(state), req.uri().clone(), host).await
     } else {
         proxy_handler(State(state), req).await
     }
@@ -85,17 +97,18 @@ async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
     uri: Uri,
+    host: Option<String>,
 ) -> Response {
-    let path = uri.path();
-    let (service_name, remaining_path) = match extract_service_info_or_error(path) {
+    let service_name = match extract_service_name_or_error(host.as_deref()) {
         Ok(res) => res,
         Err(e) => return e,
     };
 
+    let path = uri.path().to_string();
     let full_path = if let Some(query) = uri.query() {
-        format!("{}?{}", remaining_path, query)
+        format!("{}?{}", path, query)
     } else {
-        remaining_path
+        path
     };
 
     ws.on_upgrade(move |socket| handle_ws(socket, state, service_name, full_path))
@@ -208,9 +221,12 @@ async fn proxy_handler(
     req: axum::extract::Request,
 ) -> Response {
     let uri = req.uri().clone();
-    let path = uri.path();
+    let host = req
+        .headers()
+        .get(axum::http::header::HOST)
+        .and_then(|h| h.to_str().ok());
 
-    let (service_name, remaining_path) = match extract_service_info_or_error(path) {
+    let service_name = match extract_service_name_or_error(host) {
         Ok(res) => res,
         Err(e) => return e,
     };
@@ -229,11 +245,11 @@ async fn proxy_handler(
 
     // 3. Serialize HTTP Request to Iroh Stream
     let method = req.method().as_str();
-    // Use the remaining path for the forwarded request
+    let path = uri.path();
     let path_to_forward = if let Some(query) = uri.query() {
-        format!("{}?{}", remaining_path, query)
+        format!("{}?{}", path, query)
     } else {
-        remaining_path
+        path.to_string()
     };
 
     let version = match req.version() {
