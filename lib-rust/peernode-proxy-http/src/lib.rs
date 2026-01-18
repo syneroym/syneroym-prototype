@@ -12,7 +12,7 @@ use iroh::{Endpoint, EndpointAddr};
 use protocol_base::SYNEROYM_ALPN;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio_util::io::ReaderStream;
 use tracing::{error, info};
@@ -278,8 +278,53 @@ async fn proxy_handler(
     }
 
     // 5. Read Response from Iroh Stream and pipe back to Axum Response
-    let stream = tokio_util::io::ReaderStream::new(recv);
+    parse_iroh_response(recv).await
+}
+
+async fn parse_iroh_response(recv: RecvStream) -> Response {
+    let mut reader = BufReader::new(recv);
+    let mut line = String::new();
+
+    // Parse Status Line
+    if reader.read_line(&mut line).await.is_err() {
+        return axum::http::StatusCode::BAD_GATEWAY.into_response();
+    }
+
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.len() < 2 {
+        return axum::http::StatusCode::BAD_GATEWAY.into_response();
+    }
+
+    let status_code = parts[1].parse::<u16>().unwrap_or(502);
+    let status = axum::http::StatusCode::from_u16(status_code)
+        .unwrap_or(axum::http::StatusCode::BAD_GATEWAY);
+
+    let mut builder = Response::builder().status(status);
+
+    // Parse Headers
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => break, // EOF
+            Ok(_) => {
+                if line == "\r\n" || line == "\n" {
+                    break;
+                }
+
+                if let Some((key, value)) = line.split_once(':') {
+                    let key = key.trim();
+                    let value = value.trim();
+                    builder = builder.header(key, value);
+                }
+            }
+            Err(_) => return axum::http::StatusCode::BAD_GATEWAY.into_response(),
+        }
+    }
+
+    let stream = tokio_util::io::ReaderStream::new(reader);
     let body = Body::from_stream(stream);
 
-    Response::new(body)
+    builder
+        .body(body)
+        .unwrap_or_else(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
