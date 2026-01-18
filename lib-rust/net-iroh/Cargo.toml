@@ -13,3 +13,4 @@ anyhow.workspace = true
 tokio.workspace = true
 iroh = "0.95"
 n0-error = "0.1"
+tracing.workspace = true

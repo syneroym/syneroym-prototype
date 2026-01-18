@@ -11,29 +11,30 @@ use protocol_base::{ProtocolHandler, SYNEROYM_ALPN};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tracing::{debug, error, info};
 
 pub async fn init(
     config: &Config,
     handlers: Vec<Arc<dyn ProtocolHandler>>,
 ) -> Result<Option<Router>> {
     for handler in &handlers[..] {
-        println!(" - {}", handler.protocol_id());
+        debug!(" - {}", handler.protocol_id());
     }
 
     // Initialize Iroh if configured
     if let Some(iroh_config) = &config.comm_iroh {
-        println!("Initializing Iroh communication...");
+        debug!("Initializing Iroh communication...");
         if let Some(secret) = &iroh_config.secret_key_path {
-            println!("Using secret key at: {:?}", secret);
+            debug!("Using secret key at: {:?}", secret);
         }
 
         let router = start_accept_side(handlers).await?;
 
-        println!(
+        info!(
             "Iroh listening on ALPN: {:?}",
             std::str::from_utf8(SYNEROYM_ALPN)
         );
-        println!("Iroh passing connections to handlers:");
+        debug!("Iroh passing connections to handlers:");
 
         // Wait for the endpoint to be online (non-blocking if we just await the future, but we want to return it)
         // Actually, let's just return the router. The caller can wait if they want, or just hold it.
@@ -66,7 +67,7 @@ impl IrohProtocolHandler for ServiceProxy {
     async fn accept(&self, connection: Connection) -> Result<(), AcceptError> {
         // We can get the remote's endpoint id from the connection.
         let endpoint_id = connection.remote_id();
-        println!("accepted connection from {endpoint_id}");
+        debug!("accepted connection from {endpoint_id}");
 
         // We expect the connecting peer to open a single bi-directional stream.
         let (send, recv) = connection.accept_bi().await?;
@@ -124,7 +125,7 @@ async fn handle_stream((mut send, mut recv): (SendStream, RecvStream)) -> Result
     let (mut br, mut bw) = backend.split();
 
     let client_to_backend = async {
-        println!(
+        info!(
             "--> wrote to service {} bytes",
             tokio::io::copy(&mut recv, &mut bw).await?,
         );
@@ -133,16 +134,21 @@ async fn handle_stream((mut send, mut recv): (SendStream, RecvStream)) -> Result
     };
 
     let backend_to_client = async {
-        println!(
+        info!(
             "<-- wrote back to iroh {} bytes",
             tokio::io::copy(&mut br, &mut send).await?
         );
         send.finish()?;
+
         Ok::<_, anyhow::Error>(())
     };
 
-    if let Err(e) = tokio::try_join!(client_to_backend, backend_to_client) {
-        eprintln!("stream error: {e:?}");
+    let (res1, res2) = tokio::join!(client_to_backend, backend_to_client);
+    if let Err(e) = res1 {
+        error!("client->backend stream error: {e:?}");
+    }
+    if let Err(e) = res2 {
+        error!("backend->client stream error: {e:?}");
     }
 
     Ok(())

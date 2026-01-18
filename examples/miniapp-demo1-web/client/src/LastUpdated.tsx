@@ -9,17 +9,17 @@ export default function LastUpdated() {
   onMount(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
-    
+
     socket = new WebSocket(wsUrl);
 
     socket.onopen = () => {
       setStatus('Connected');
-      
+
       const intervalId = setInterval(() => {
         if (socket?.readyState === WebSocket.OPEN) {
-            socket.send("Hi from client");
+          socket.send("Hi from client");
         }
-      }, 60000);
+      }, 10000);
 
       onCleanup(() => clearInterval(intervalId));
     };

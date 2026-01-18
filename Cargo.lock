@@ -3967,23 +3967,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "peernode-proxy-http"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum 0.7.9",
- "bytes",
- "futures",
- "http-body-util",
- "iroh",
- "syneroym-protocol-base",
- "tokio",
- "tokio-util",
- "tower-http 0.5.2",
- "tracing",
-]
-
-[[package]]
 name = "pem-rfc7468"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5737,6 +5720,7 @@ dependencies = [
  "syneroym-common",
  "syneroym-protocol-base",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -5745,16 +5729,33 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "iroh",
- "peernode-proxy-http",
  "syneroym-app-host",
  "syneroym-common",
  "syneroym-net",
  "syneroym-net-iroh",
+ "syneroym-peerproxy-http",
  "syneroym-protocol-base",
  "syneroym-protocol-http",
  "syneroym-store-interface",
  "syneroym-store-sqlite",
  "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "syneroym-peerproxy-http"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum 0.7.9",
+ "bytes",
+ "futures",
+ "http-body-util",
+ "iroh",
+ "syneroym-protocol-base",
+ "tokio",
+ "tokio-util",
+ "tower-http 0.5.2",
  "tracing",
 ]
 

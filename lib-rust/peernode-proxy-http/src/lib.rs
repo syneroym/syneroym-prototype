@@ -15,7 +15,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio_util::io::ReaderStream;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 type NodeId = EndpointAddr;
 
@@ -167,6 +167,7 @@ async fn handle_ws(
         while let Some(chunk) = reader.next().await {
             match chunk {
                 Ok(bytes) => {
+                    let l = bytes.len();
                     if let Err(e) = ws_sender
                         .send(axum::extract::ws::Message::Binary(bytes.into()))
                         .await
@@ -174,6 +175,7 @@ async fn handle_ws(
                         error!("Failed to send to WS client: {}", e);
                         break;
                     }
+                    debug!("{} ws bytes to WS client", l);
                 },
                 Err(e) => {
                     error!("Error reading from Iroh: {}", e);
@@ -191,11 +193,13 @@ async fn handle_ws(
                 Ok(msg) => {
                     // Extract payload bytes (Text or Binary)
                     let data = msg.into_data();
+                    let l = data.len();
                     if !data.is_empty() {
                         if let Err(e) = iroh_sender.write_all(&data).await {
                             error!("Failed to write to Iroh: {}", e);
                             break;
                         }
+                        debug!("{} ws bytes to Iroh", l);
                     }
                 },
                 Err(e) => {
@@ -207,6 +211,7 @@ async fn handle_ws(
     };
 
     tokio::join!(downstream, upstream);
+    info!("WS connection closed for service: {}", service_name);
 }
 
 async fn proxy_handler(
