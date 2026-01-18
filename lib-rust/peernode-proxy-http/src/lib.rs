@@ -3,12 +3,11 @@ use axum::{
     extract::{State, WebSocketUpgrade},
     http::Uri,
     response::{IntoResponse, Response},
-    routing::any,
     Router,
 };
 use futures::{SinkExt, StreamExt};
 use http_body_util::BodyExt;
-use iroh::endpoint::{Connection, RecvStream, SendStream};
+use iroh::endpoint::{RecvStream, SendStream};
 use iroh::{Endpoint, EndpointAddr};
 use protocol_base::SYNEROYM_ALPN;
 use std::net::SocketAddr;
@@ -39,10 +38,7 @@ pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
         target,
     });
 
-    let app = Router::new()
-        .route("/ws", any(ws_handler))
-        .fallback(proxy_handler)
-        .with_state(state);
+    let app = Router::new().fallback(common_handler).with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = TcpListener::bind(addr).await?;
@@ -63,21 +59,37 @@ fn extract_service_and_path(path: &str) -> Option<(String, String)> {
     }
 }
 
+fn extract_service_info_or_error(path: &str) -> Result<(String, String), Response> {
+    extract_service_and_path(path).ok_or_else(|| {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            "Missing service name in path",
+        )
+            .into_response()
+    })
+}
+
+async fn common_handler(
+    State(state): State<Arc<AppState>>,
+    ws: Option<WebSocketUpgrade>,
+    req: axum::extract::Request,
+) -> Response {
+    if let Some(ws) = ws {
+        ws_handler(ws, State(state), req.uri().clone()).await
+    } else {
+        proxy_handler(State(state), req).await
+    }
+}
+
 async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
     uri: Uri,
 ) -> Response {
     let path = uri.path();
-    let (service_name, remaining_path) = match extract_service_and_path(path) {
-        Some(res) => res,
-        None => {
-            return (
-                axum::http::StatusCode::BAD_REQUEST,
-                "Missing service name in path",
-            )
-                .into_response()
-        },
+    let (service_name, remaining_path) = match extract_service_info_or_error(path) {
+        Ok(res) => res,
+        Err(e) => return e,
     };
 
     let full_path = if let Some(query) = uri.query() {
@@ -89,39 +101,37 @@ async fn ws_handler(
     ws.on_upgrade(move |socket| handle_ws(socket, state, service_name, full_path))
 }
 
+async fn connect_and_handshake(
+    state: &AppState,
+    service_name: &str,
+) -> anyhow::Result<(SendStream, RecvStream)> {
+    let connection = state
+        .iroh
+        .connect(state.target.clone(), SYNEROYM_ALPN)
+        .await?;
+    let (mut send, recv) = connection.open_bi().await?;
+
+    let name = service_name.as_bytes();
+    send.write_u8(name.len() as u8).await?;
+    send.write_all(name).await?;
+
+    Ok((send, recv))
+}
+
 async fn handle_ws(
     socket: axum::extract::ws::WebSocket,
     state: Arc<AppState>,
     service_name: String,
     path: String,
 ) {
-    // Connecting to Iroh
-    let connection: Connection = match state.iroh.connect(state.target.clone(), SYNEROYM_ALPN).await {
-        Ok(c) => c,
+    // Connecting to Iroh and sending Service Name
+    let (mut iroh_sender, iroh_recv) = match connect_and_handshake(&state, &service_name).await {
+        Ok(streams) => streams,
         Err(e) => {
-            error!("Failed to connect to iroh target: {}", e);
+            error!("Failed to connect and handshake with iroh target: {}", e);
             return;
         },
     };
-
-    let (mut iroh_sender, iroh_recv): (SendStream, RecvStream) = match connection.open_bi().await {
-        Ok(bi) => bi,
-        Err(e) => {
-            error!("Failed to open bi stream: {}", e);
-            return;
-        },
-    };
-
-    // Send Service Name
-    let name = service_name.as_bytes();
-    if let Err(e) = iroh_sender.write_u8(name.len() as u8).await {
-        error!("Failed to write service name len: {}", e);
-        return;
-    }
-    if let Err(e) = iroh_sender.write_all(name).await {
-        error!("Failed to write service name: {}", e);
-        return;
-    }
 
     // Send Path/Handshake to backend (simulated)
     // This allows the backend to see the request path and protocol
@@ -200,56 +210,22 @@ async fn proxy_handler(
     let uri = req.uri().clone();
     let path = uri.path();
 
-    let (service_name, remaining_path) = match extract_service_and_path(path) {
-        Some(res) => res,
-        None => {
-            return (
-                axum::http::StatusCode::BAD_REQUEST,
-                "Missing service name in path",
-            )
-                .into_response()
-        },
+    let (service_name, remaining_path) = match extract_service_info_or_error(path) {
+        Ok(res) => res,
+        Err(e) => return e,
     };
 
-    // 1. Connect to Iroh Target
-    let connection: Connection = match state.iroh.connect(state.target.clone(), SYNEROYM_ALPN).await {
-        Ok(c) => c,
+    // 1 & 2. Connect to Iroh Target and Send Service Name
+    let (mut send, recv) = match connect_and_handshake(&state, &service_name).await {
+        Ok(streams) => streams,
         Err(e) => {
             return (
                 axum::http::StatusCode::BAD_GATEWAY,
-                format!("Connect error: {}", e),
+                format!("Connect/Handshake error: {}", e),
             )
                 .into_response()
         },
     };
-
-    let (mut send, recv): (SendStream, RecvStream) = match connection.open_bi().await {
-        Ok(bi) => bi,
-        Err(e) => {
-            return (
-                axum::http::StatusCode::BAD_GATEWAY,
-                format!("Stream error: {}", e),
-            )
-                .into_response()
-        },
-    };
-
-    // 2. Send Service Name
-    let name = service_name.as_bytes();
-    if let Err(e) = send.write_u8(name.len() as u8).await {
-        return (
-            axum::http::StatusCode::BAD_GATEWAY,
-            format!("Write error: {}", e),
-        )
-            .into_response();
-    }
-    if let Err(e) = send.write_all(name).await {
-        return (
-            axum::http::StatusCode::BAD_GATEWAY,
-            format!("Write error: {}", e),
-        )
-            .into_response();
-    }
 
     // 3. Serialize HTTP Request to Iroh Stream
     let method = req.method().as_str();
@@ -269,22 +245,14 @@ async fn proxy_handler(
         _ => "HTTP/1.1",
     };
 
-    let request_line = format!(
-        "{} {} {}
-",
-        method, path_to_forward, version
-    );
+    let request_line = format!("{} {} {}\r\n", method, path_to_forward, version);
     if let Err(_) = send.write_all(request_line.as_bytes()).await {
         return axum::http::StatusCode::BAD_GATEWAY.into_response();
     }
 
     for (name, value) in req.headers() {
         if let Ok(v) = value.to_str() {
-            let header_line = format!(
-                "{}: {}
-",
-                name, v
-            );
+            let header_line = format!("{}: {}\r\n", name, v);
             if let Err(_) = send.write_all(header_line.as_bytes()).await {
                 return axum::http::StatusCode::BAD_GATEWAY.into_response();
             }
