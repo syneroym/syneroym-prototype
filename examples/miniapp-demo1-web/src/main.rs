@@ -1,7 +1,7 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Json, State, Multipart, Path,
+        Json, Multipart, Path, State,
     },
     http::{header, StatusCode, Uri},
     response::{Html, IntoResponse},
@@ -160,7 +160,7 @@ async fn list_files(State(state): State<Arc<AppState>>) -> impl IntoResponse {
                     // Filter out the database file
                     let name = entry.file_name().to_string_lossy().to_string();
                     if !name.ends_with(".db") {
-                         files.push(FileInfo {
+                        files.push(FileInfo {
                             name,
                             size: metadata.len(),
                         });
@@ -178,19 +178,19 @@ async fn upload_file(
 ) -> impl IntoResponse {
     while let Ok(Some(field)) = multipart.next_field().await {
         if let Some(file_name) = field.file_name() {
-             let file_name = file_name.to_string();
-             // Simple sanitization
-             if file_name.contains("..") || file_name.contains('/') || file_name.contains('\\') {
-                 continue; 
-             }
-             
-             if let Ok(data) = field.bytes().await {
-                 let file_path = std::path::Path::new(&state.data_dir).join(&file_name);
-                 if let Err(e) = tokio::fs::write(&file_path, data).await {
-                     eprintln!("Failed to write file: {}", e);
-                     return StatusCode::INTERNAL_SERVER_ERROR;
-                 }
-             }
+            let file_name = file_name.to_string();
+            // Simple sanitization
+            if file_name.contains("..") || file_name.contains('/') || file_name.contains('\\') {
+                continue;
+            }
+
+            if let Ok(data) = field.bytes().await {
+                let file_path = std::path::Path::new(&state.data_dir).join(&file_name);
+                if let Err(e) = tokio::fs::write(&file_path, data).await {
+                    eprintln!("Failed to write file: {}", e);
+                    return StatusCode::INTERNAL_SERVER_ERROR;
+                }
+            }
         }
     }
     StatusCode::CREATED
@@ -202,15 +202,15 @@ async fn download_file(
 ) -> impl IntoResponse {
     // Security check: ensure path is inside data_dir
     if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
-         return (StatusCode::BAD_REQUEST, "Invalid filename").into_response();
+        return (StatusCode::BAD_REQUEST, "Invalid filename").into_response();
     }
 
     let file_path = std::path::Path::new(&state.data_dir).join(&filename);
 
     match tokio::fs::read(&file_path).await {
         Ok(file) => {
-             let mime = mime_guess::from_path(&filename).first_or_octet_stream();
-             ([(header::CONTENT_TYPE, mime.as_ref())], file).into_response()
+            let mime = mime_guess::from_path(&filename).first_or_octet_stream();
+            ([(header::CONTENT_TYPE, mime.as_ref())], file).into_response()
         },
         Err(_) => (StatusCode::NOT_FOUND, "File not found").into_response(),
     }
@@ -251,7 +251,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                         println!("[{}] Received: {}", chrono::Utc::now(), text);
                         let ws_msg = WsMessage {
                             comment_update_timestamp: None,
-                            recd_msg: Some(text.to_string()),
+                            recd_msg: Some(format!("[{}] Received: {}", chrono::Utc::now(), text).to_string()),
                         };
                          if let Ok(json) = serde_json::to_string(&ws_msg) {
                             if socket.send(Message::Text(json.into())).await.is_err() {
