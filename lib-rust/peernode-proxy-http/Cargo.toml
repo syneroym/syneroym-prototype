@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = { version = "0.7", features = ["ws"] }
 tokio.workspace = true
 tracing.workspace = true
 anyhow = "1.0"
@@ -15,3 +14,4 @@ bytes = "1"
 protocol-base = { package = "syneroym-protocol-base", path = "../protocol-base" }
 tokio-util = { version = "0.7", features = ["io"] }
 http-body-util = "0.1"
+tls-parser = "0.12"

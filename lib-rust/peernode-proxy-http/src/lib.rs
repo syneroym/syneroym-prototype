@@ -1,20 +1,16 @@
-use axum::{
-    body::Body,
-    extract::{State, WebSocketUpgrade},
-    http::Uri,
-    response::{IntoResponse, Response},
-    Router,
-};
-use futures::{SinkExt, StreamExt};
-use http_body_util::BodyExt;
+use anyhow::{anyhow, Result};
 use iroh::endpoint::{RecvStream, SendStream};
 use iroh::{Endpoint, EndpointAddr};
 use protocol_base::SYNEROYM_ALPN;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use std::task::{self, Poll};
+
+use tls_parser::{parse_tls_plaintext, TlsMessage, TlsMessageHandshake};
+use tokio::io::{self, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpListener;
-use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info};
 
 type NodeId = EndpointAddr;
@@ -30,7 +26,6 @@ pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
         port, target
     );
 
-    // Bind a new local iroh endpoint for the proxy client
     let endpoint = Endpoint::bind().await?;
 
     let state = Arc::new(AppState {
@@ -38,349 +33,181 @@ pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
         target,
     });
 
-    let app = Router::new().fallback(common_handler).with_state(state);
+    let pxy_addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let listener = TcpListener::bind(pxy_addr).await?;
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = TcpListener::bind(addr).await?;
+    info!("PeerNode HTTP Proxy listening on {}", pxy_addr);
 
-    info!("PeerNode HTTP Proxy listening on {}", addr);
-    axum::serve(listener, app).await?;
-    Ok(())
+    loop {
+        let (client, cl_addr) = listener.accept().await?;
+        debug!("New connection from: {}", cl_addr);
+        let state = state.clone();
+        tokio::spawn(async move {
+            if let Err(e) = proxy_connection(client, state).await {
+                error!("connection error: {e}");
+            }
+        });
+    }
 }
 
-fn extract_service_from_host(host: &str) -> Option<String> {
-    let hostname = host.split(':').next().unwrap_or(host);
-    let parts: Vec<&str> = hostname.split('.').collect();
-    if parts.len() > 1 {
-        Some(parts[0].to_string())
+async fn proxy_connection(
+    mut client: tokio::net::TcpStream,
+    state: Arc<AppState>,
+) -> anyhow::Result<()> {
+    // Peek to determine protocol and extract hostname
+    let mut peek_buf = vec![0u8; 4096];
+    let n = client.peek(&mut peek_buf).await?;
+
+    if n == 0 {
+        return Err(anyhow!("Client closed connection"));
+    }
+
+    // Determine if this is TLS or plain HTTP
+    let hostname = if is_tls_client_hello(&peek_buf[..n]) {
+        println!("Detected TLS connection");
+        extract_sni(&peek_buf[..n])?
     } else {
-        None
-    }
-}
-
-fn extract_service_name_or_error(host: Option<&str>) -> Result<String, Response> {
-    let host = host.ok_or_else(|| {
-        (axum::http::StatusCode::BAD_REQUEST, "Missing Host header").into_response()
-    })?;
-
-    extract_service_from_host(host).ok_or_else(|| {
-        (
-            axum::http::StatusCode::BAD_REQUEST,
-            "Invalid Host header: missing service subdomain",
-        )
-            .into_response()
-    })
-}
-
-fn map_version_to_string(version: axum::http::Version) -> String {
-    match version {
-        axum::http::Version::HTTP_09 => "HTTP/0.9".to_string(),
-        axum::http::Version::HTTP_10 => "HTTP/1.0".to_string(),
-        axum::http::Version::HTTP_11 => "HTTP/1.1".to_string(),
-        axum::http::Version::HTTP_2 => "HTTP/2.0".to_string(),
-        axum::http::Version::HTTP_3 => "HTTP/3.0".to_string(),
-        _ => "HTTP/1.1".to_string(),
-    }
-}
-
-async fn common_handler(
-    State(state): State<Arc<AppState>>,
-    ws: Option<WebSocketUpgrade>,
-    req: axum::extract::Request,
-) -> Response {
-    if let Some(ws) = ws {
-        let version = map_version_to_string(req.version());
-
-        let headers = req
-            .headers()
-            .iter()
-            .filter_map(|(k, v)| {
-                v.to_str()
-                    .ok()
-                    .map(|v_str| (k.to_string(), v_str.to_string()))
-            })
-            .collect::<Vec<_>>();
-
-        let host = req
-            .headers()
-            .get(axum::http::header::HOST)
-            .and_then(|h| h.to_str().ok())
-            .map(|s| s.to_string());
-        ws_handler(ws, State(state), req.uri().clone(), host, headers, version).await
-    } else {
-        proxy_handler(State(state), req).await
-    }
-}
-
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-    uri: Uri,
-    host: Option<String>,
-    headers: Vec<(String, String)>,
-    version: String,
-) -> Response {
-    let service_name = match extract_service_name_or_error(host.as_deref()) {
-        Ok(res) => res,
-        Err(e) => return e,
+        println!("Detected plain HTTP connection");
+        extract_host_from_http(&peek_buf[..n])?
     };
 
-    let path = uri.path().to_string();
-    let full_path = if let Some(query) = uri.query() {
-        format!("{}?{}", path, query)
-    } else {
-        path
-    };
+    debug!("Extracted hostname: {}", hostname);
+    let svc_name = extract_service_from_host(hostname.as_str())?;
+    debug!("Extracted service name: {}", svc_name);
 
-    ws.on_upgrade(move |socket| handle_ws(socket, state, service_name, full_path, headers, version))
-}
-
-async fn connect_and_handshake(
-    state: &AppState,
-    service_name: &str,
-) -> anyhow::Result<(SendStream, RecvStream)> {
+    // 1. Connect to Iroh
     let connection = state
         .iroh
         .connect(state.target.clone(), SYNEROYM_ALPN)
         .await?;
     let (mut send, recv) = connection.open_bi().await?;
 
-    let name = service_name.as_bytes();
-    send.write_u8(name.len() as u8).await?;
-    send.write_all(name).await?;
+    // 2. Handshake (send service name)
+    let svc_raw = svc_name.as_bytes();
+    send.write_u8(svc_raw.len() as u8).await?;
+    send.write_all(svc_raw).await?;
 
-    Ok((send, recv))
-}
-
-async fn handle_ws(
-    socket: axum::extract::ws::WebSocket,
-    state: Arc<AppState>,
-    service_name: String,
-    path: String,
-    headers: Vec<(String, String)>,
-    version: String,
-) {
-    // Connecting to Iroh and sending Service Name
-    let (mut iroh_sender, iroh_recv) = match connect_and_handshake(&state, &service_name).await {
-        Ok(streams) => streams,
-        Err(e) => {
-            error!("Failed to connect and handshake with iroh target: {}", e);
-            return;
-        },
-    };
-
-    // Send Path/Handshake to backend (simulated)
-    // This allows the backend to see the request path and protocol
-    let mut handshake = format!("GET {} {}\r\n", path, version);
-    for (key, val) in headers {
-        handshake.push_str(&format!("{}: {}\r\n", key, val));
-    }
-    handshake.push_str("\r\n");
-
-    if let Err(e) = iroh_sender.write_all(handshake.as_bytes()).await {
-        error!("Failed to write handshake: {}", e);
-        return;
-    }
-
-    info!(
-        "WS connection opened for service: {}, path: {}",
-        service_name, path
+    // Bidirectional streaming - copies all bytes in both directions
+    let (client_to_backend, backend_to_client) =
+        io::copy_bidirectional(&mut client, &mut IrohStream { send, recv }).await?;
+    debug!(
+        "proxy copied bytes {}&{}",
+        client_to_backend, backend_to_client
     );
 
-    let (mut ws_sender, mut ws_receiver) = socket.split();
-
-    // Downstream: Iroh -> WS
-    // Read bytes from Iroh and send as Binary frames to WS
-    let downstream = async {
-        let mut reader = BufReader::new(iroh_recv);
-        let mut line = String::new();
-
-        // Consume the HTTP handshake response headers from the backend
-        loop {
-            line.clear();
-            match reader.read_line(&mut line).await {
-                Ok(0) => break,
-                Ok(_) => {
-                    if line == "\r\n" || line == "\n" {
-                        break;
-                    }
-                },
-                Err(e) => {
-                    error!("Error reading handshake from Iroh: {}", e);
-                    return;
-                },
-            }
-        }
-
-        let mut stream = ReaderStream::new(reader);
-        while let Some(chunk) = stream.next().await {
-            match chunk {
-                Ok(bytes) => {
-                    let l = bytes.len();
-                    if let Err(e) = ws_sender
-                        .send(axum::extract::ws::Message::Binary(bytes.into()))
-                        .await
-                    {
-                        error!("Failed to send to WS client: {}", e);
-                        break;
-                    }
-                    debug!("{} ws bytes to WS client", l);
-                },
-                Err(e) => {
-                    error!("Error reading from Iroh: {}", e);
-                    break;
-                },
-            }
-        }
-    };
-
-    // Upstream: WS -> Iroh
-    // Read messages from WS and write payload to Iroh
-    let upstream = async {
-        while let Some(msg) = ws_receiver.next().await {
-            match msg {
-                Ok(msg) => {
-                    // Extract payload bytes (Text or Binary)
-                    let data = msg.into_data();
-                    let l = data.len();
-                    if !data.is_empty() {
-                        if let Err(e) = iroh_sender.write_all(&data).await {
-                            error!("Failed to write to Iroh: {}", e);
-                            break;
-                        }
-                        debug!("{} ws bytes to Iroh", l);
-                    }
-                },
-                Err(e) => {
-                    error!("WS client error: {}", e);
-                    break;
-                },
-            }
-        }
-    };
-
-    tokio::join!(downstream, upstream);
-    info!("WS connection closed for service: {}", service_name);
+    Ok(())
 }
 
-async fn proxy_handler(
-    State(state): State<Arc<AppState>>,
-    req: axum::extract::Request,
-) -> Response {
-    let uri = req.uri().clone();
-    let host = req
-        .headers()
-        .get(axum::http::header::HOST)
-        .and_then(|h| h.to_str().ok());
+fn is_tls_client_hello(buf: &[u8]) -> bool {
+    // TLS record starts with:
+    // - 0x16 (Handshake)
+    // - 0x03 0x00 to 0x03 0x03 (SSL/TLS version)
+    buf.len() >= 3 && buf[0] == 0x16 && buf[1] == 0x03
+}
 
-    let service_name = match extract_service_name_or_error(host) {
-        Ok(res) => res,
-        Err(e) => return e,
-    };
+fn extract_sni(buf: &[u8]) -> Result<String> {
+    let (_, tls_record) =
+        parse_tls_plaintext(buf).map_err(|e| anyhow!("Failed to parse TLS: {:?}", e))?;
 
-    // 1 & 2. Connect to Iroh Target and Send Service Name
-    let (mut send, recv) = match connect_and_handshake(&state, &service_name).await {
-        Ok(streams) => streams,
-        Err(e) => {
-            return (
-                axum::http::StatusCode::BAD_GATEWAY,
-                format!("Connect/Handshake error: {}", e),
-            )
-                .into_response()
-        },
-    };
+    // Look for ClientHello message
+    for msg in tls_record.msg {
+        if let TlsMessage::Handshake(handshake) = msg {
+            if let TlsMessageHandshake::ClientHello(client_hello) = handshake {
+                // Parse extensions from raw bytes
+                if let Some(ext_bytes) = client_hello.ext {
+                    // Use parse_tls_extensions to parse the extension bytes
+                    match tls_parser::parse_tls_extensions(ext_bytes) {
+                        Ok((_, extensions)) => {
+                            for ext in extensions {
+                                if let tls_parser::TlsExtension::SNI(sni_list) = ext {
+                                    if !sni_list.is_empty() {
+                                        // SNI entry is (type, hostname_bytes)
+                                        let hostname = std::str::from_utf8(sni_list[0].1)
+                                            .map_err(|e| anyhow!("Invalid SNI hostname: {}", e))?;
+                                        return Ok(hostname.to_string());
+                                    }
+                                }
+                            }
+                        },
+                        Err(e) => {
+                            error!("Failed to parse TLS extensions: {:?}", e);
+                        },
+                    }
+                }
+            }
+        }
+    }
 
-    // 3. Serialize HTTP Request to Iroh Stream
-    let method = req.method().as_str();
-    let path = uri.path();
-    let path_to_forward = if let Some(query) = uri.query() {
-        format!("{}?{}", path, query)
+    Err(anyhow!("No SNI found in TLS ClientHello"))
+}
+fn extract_host_from_http(buf: &[u8]) -> Result<String> {
+    // Use lossy conversion to handle potential binary body data in the peek buffer
+    let http_text = String::from_utf8_lossy(buf);
+
+    // Parse HTTP headers line by line
+    for line in http_text.lines() {
+        if line.len() > 5 && line[..5].eq_ignore_ascii_case("host:") {
+            let host = line[5..].trim();
+            // Remove port if present
+            let hostname = host.split(':').next().unwrap_or(host);
+            return Ok(hostname.to_string());
+        }
+    }
+
+    Err(anyhow!("No Host header found in HTTP request"))
+}
+
+struct IrohStream {
+    send: SendStream,
+    recv: RecvStream,
+}
+
+impl AsyncRead for IrohStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut task::Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.recv).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for IrohStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut task::Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, std::io::Error>> {
+        Pin::new(&mut self.send)
+            .poll_write(cx, buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+    }
+
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        cx: &mut task::Context<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
+        Pin::new(&mut self.send)
+            .poll_flush(cx)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut task::Context<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
+        Pin::new(&mut self.send)
+            .poll_shutdown(cx)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+    }
+}
+
+fn extract_service_from_host(host: &str) -> Result<String> {
+    let hostname = host.split(':').next().unwrap_or(host);
+    let parts: Vec<&str> = hostname.split('.').collect();
+    if parts.len() > 1 {
+        Ok(parts[0].to_string())
     } else {
-        path.to_string()
-    };
-
-    let version = map_version_to_string(req.version());
-
-    let request_line = format!("{} {} {}\r\n", method, path_to_forward, version);
-    if let Err(_) = send.write_all(request_line.as_bytes()).await {
-        return axum::http::StatusCode::BAD_GATEWAY.into_response();
+        Err(anyhow!("service name not found in host: {}", host))
     }
-
-    for (name, value) in req.headers() {
-        if let Ok(v) = value.to_str() {
-            let header_line = format!("{}: {}\r\n", name, v);
-            if let Err(_) = send.write_all(header_line.as_bytes()).await {
-                return axum::http::StatusCode::BAD_GATEWAY.into_response();
-            }
-        }
-    }
-    if let Err(_) = send.write_all(b"\r\n").await {
-        return axum::http::StatusCode::BAD_GATEWAY.into_response();
-    }
-
-    // 4. Stream Body
-    let mut body = req.into_body();
-    while let Some(chunk) = body.frame().await {
-        match chunk {
-            Ok(frame) => {
-                if let Ok(data) = frame.into_data() {
-                    if let Err(_) = send.write_all(&data).await {
-                        return axum::http::StatusCode::BAD_GATEWAY.into_response();
-                    }
-                }
-            },
-            Err(_) => return axum::http::StatusCode::BAD_GATEWAY.into_response(),
-        }
-    }
-
-    // 5. Read Response from Iroh Stream and pipe back to Axum Response
-    parse_iroh_response(recv).await
-}
-
-async fn parse_iroh_response(recv: RecvStream) -> Response {
-    let mut reader = BufReader::new(recv);
-    let mut line = String::new();
-
-    // Parse Status Line
-    if reader.read_line(&mut line).await.is_err() {
-        return axum::http::StatusCode::BAD_GATEWAY.into_response();
-    }
-
-    let parts: Vec<&str> = line.split_whitespace().collect();
-    if parts.len() < 2 {
-        return axum::http::StatusCode::BAD_GATEWAY.into_response();
-    }
-
-    let status_code = parts[1].parse::<u16>().unwrap_or(502);
-    let status = axum::http::StatusCode::from_u16(status_code)
-        .unwrap_or(axum::http::StatusCode::BAD_GATEWAY);
-
-    let mut builder = Response::builder().status(status);
-
-    // Parse Headers
-    loop {
-        line.clear();
-        match reader.read_line(&mut line).await {
-            Ok(0) => break, // EOF
-            Ok(_) => {
-                if line == "\r\n" || line == "\n" {
-                    break;
-                }
-
-                if let Some((key, value)) = line.split_once(':') {
-                    let key = key.trim();
-                    let value = value.trim();
-                    builder = builder.header(key, value);
-                }
-            },
-            Err(_) => return axum::http::StatusCode::BAD_GATEWAY.into_response(),
-        }
-    }
-
-    let stream = tokio_util::io::ReaderStream::new(reader);
-    let body = Body::from_stream(stream);
-
-    builder
-        .body(body)
-        .unwrap_or_else(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
