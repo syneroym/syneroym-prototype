@@ -1,5 +1,6 @@
 use anyhow::Result;
 use common::config::Config;
+use common::stream::IrohStream;
 use iroh::{
     endpoint::{Connection, RecvStream, SendStream},
     protocol::{AcceptError, ProtocolHandler as IrohProtocolHandler, Router},
@@ -9,7 +10,7 @@ use n0_error::e;
 use n0_error::AnyError;
 use protocol_base::{ProtocolHandler, SYNEROYM_ALPN};
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tracing::{debug, error, info};
 
@@ -122,33 +123,17 @@ async fn handle_stream((mut send, mut recv): (SendStream, RecvStream)) -> Result
     let mut backend = TcpStream::connect(backend_addr).await?;
 
     // --- Tunnel data ---
-    let (mut br, mut bw) = backend.split();
-
-    let client_to_backend = async {
-        info!(
-            "--> wrote to service {} bytes",
-            tokio::io::copy(&mut recv, &mut bw).await?,
-        );
-        bw.shutdown().await?;
-        Ok::<_, anyhow::Error>(())
-    };
-
-    let backend_to_client = async {
-        info!(
-            "<-- wrote back to iroh {} bytes",
-            tokio::io::copy(&mut br, &mut send).await?
-        );
-        send.finish()?;
-
-        Ok::<_, anyhow::Error>(())
-    };
-
-    let (res1, res2) = tokio::join!(client_to_backend, backend_to_client);
-    if let Err(e) = res1 {
-        error!("client->backend stream error: {e:?}");
-    }
-    if let Err(e) = res2 {
-        error!("backend->client stream error: {e:?}");
+    let mut iroh_stream = IrohStream::new(send, recv);
+    match tokio::io::copy_bidirectional(&mut backend, &mut iroh_stream).await {
+        Ok((client_to_backend, backend_to_client)) => {
+            info!(
+                "--> wrote to service {} bytes, <-- wrote back to iroh {} bytes",
+                client_to_backend, backend_to_client
+            );
+        }
+        Err(e) => {
+            error!("stream error: {e:?}");
+        }
     }
 
     Ok(())

@@ -10,6 +10,9 @@ serde_json.workspace = true
 serde.workspace = true
 anyhow.workspace = true
 async-trait = "0.1.89"
+iroh = "0.95"
+tokio.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 divan = "0.1"
@@ -17,4 +20,3 @@ divan = "0.1"
 [[bench]]
 name = "config_bench"
 harness = false
-

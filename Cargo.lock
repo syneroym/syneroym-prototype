@@ -5679,8 +5679,11 @@ dependencies = [
  "anyhow",
  "async-trait",
  "divan",
+ "iroh",
  "serde",
  "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -5734,6 +5737,7 @@ dependencies = [
  "futures",
  "http-body-util",
  "iroh",
+ "syneroym-common",
  "syneroym-protocol-base",
  "tls-parser",
  "tokio",

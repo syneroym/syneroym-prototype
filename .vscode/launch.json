@@ -19,7 +19,7 @@
                 "run-peer"
             ],
             "env": {
-                "RUST_LOG": "info,peernode_proxy_http=debug,syneroym-net-iroh=debug"
+                "RUST_LOG": "syneroym=debug,info"
             }
         },
         {

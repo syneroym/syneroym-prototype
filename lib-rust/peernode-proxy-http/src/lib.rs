@@ -1,15 +1,12 @@
 use anyhow::{anyhow, Result};
-use iroh::endpoint::{RecvStream, SendStream};
+use common::stream::IrohStream;
 use iroh::{Endpoint, EndpointAddr};
 use protocol_base::SYNEROYM_ALPN;
 use std::net::SocketAddr;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{self, Poll};
 
 use tls_parser::{parse_tls_plaintext, TlsMessage, TlsMessageHandshake};
 use tokio::io::{self, AsyncWriteExt};
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpListener;
 use tracing::{debug, error, info};
 
@@ -44,7 +41,7 @@ pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
         let state = state.clone();
         tokio::spawn(async move {
             if let Err(e) = proxy_connection(client, state).await {
-                error!("connection error: {e}");
+                debug!("connection error: {e}");
             }
         });
     }
@@ -64,10 +61,10 @@ async fn proxy_connection(
 
     // Determine if this is TLS or plain HTTP
     let hostname = if is_tls_client_hello(&peek_buf[..n]) {
-        println!("Detected TLS connection");
+        debug!("Detected TLS connection");
         extract_sni(&peek_buf[..n])?
     } else {
-        println!("Detected plain HTTP connection");
+        debug!("Detected plain HTTP connection");
         extract_host_from_http(&peek_buf[..n])?
     };
 
@@ -80,16 +77,17 @@ async fn proxy_connection(
         .iroh
         .connect(state.target.clone(), SYNEROYM_ALPN)
         .await?;
-    let (mut send, recv) = connection.open_bi().await?;
+    let (send, recv) = connection.open_bi().await?;
 
     // 2. Handshake (send service name)
     let svc_raw = svc_name.as_bytes();
-    send.write_u8(svc_raw.len() as u8).await?;
-    send.write_all(svc_raw).await?;
+    let mut iroh_stream = IrohStream::new(send, recv);
+    iroh_stream.write_u8(svc_raw.len() as u8).await?;
+    iroh_stream.write_all(svc_raw).await?;
 
     // Bidirectional streaming - copies all bytes in both directions
     let (client_to_backend, backend_to_client) =
-        io::copy_bidirectional(&mut client, &mut IrohStream { send, recv }).await?;
+        io::copy_bidirectional(&mut client, &mut iroh_stream).await?;
     debug!(
         "proxy copied bytes {}&{}",
         client_to_backend, backend_to_client
@@ -155,51 +153,6 @@ fn extract_host_from_http(buf: &[u8]) -> Result<String> {
     }
 
     Err(anyhow!("No Host header found in HTTP request"))
-}
-
-struct IrohStream {
-    send: SendStream,
-    recv: RecvStream,
-}
-
-impl AsyncRead for IrohStream {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        Pin::new(&mut self.recv).poll_read(cx, buf)
-    }
-}
-
-impl AsyncWrite for IrohStream {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-        buf: &[u8],
-    ) -> Poll<Result<usize, std::io::Error>> {
-        Pin::new(&mut self.send)
-            .poll_write(cx, buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
-    }
-
-    fn poll_flush(
-        mut self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-    ) -> Poll<Result<(), std::io::Error>> {
-        Pin::new(&mut self.send)
-            .poll_flush(cx)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
-    }
-
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-    ) -> Poll<Result<(), std::io::Error>> {
-        Pin::new(&mut self.send)
-            .poll_shutdown(cx)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
-    }
 }
 
 fn extract_service_from_host(host: &str) -> Result<String> {
