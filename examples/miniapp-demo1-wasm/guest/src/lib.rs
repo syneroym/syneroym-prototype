@@ -2,193 +2,148 @@ mod bindings;
 mod handlers;
 mod types;
 
-use types::*;
+use wit_bindgen::generate;
 
-/// List RPC methods this module exposes
-#[no_mangle]
-pub extern "C" fn list_methods(result_ptr: *mut i32, result_len: *mut i32) {
-    let methods = vec![
-        MethodConfig {
-            name: "comments.list".to_string(),
-            request_streaming: false,
-            response_streaming: false,
-        },
-        MethodConfig {
-            name: "comments.create".to_string(),
-            request_streaming: false,
-            response_streaming: false,
-        },
-        MethodConfig {
-            name: "files.list".to_string(),
-            request_streaming: false,
-            response_streaming: false,
-        },
-        MethodConfig {
-            name: "files.upload".to_string(),
-            request_streaming: true,
-            response_streaming: false,
-        },
-        MethodConfig {
-            name: "files.download".to_string(),
-            request_streaming: false,
-            response_streaming: true,
-        },
-    ];
+generate!({
+    world: "handler",
+    path: "wit",
+});
 
-    let json = serde_json::to_vec(&methods).unwrap();
-    let ptr = bindings::alloc(json.len() as i32);
+use crate::app::handler::types::ErrorDetails as WitErrorDetails;
 
-    unsafe {
-        std::ptr::copy_nonoverlapping(json.as_ptr(), ptr, json.len());
-        *result_ptr = ptr as i32;
-        *result_len = json.len() as i32;
+struct Component;
+
+impl Guest for Component {
+    fn list_methods() -> Vec<MethodConfig> {
+        vec![
+            MethodConfig {
+                name: "comments.list".to_string(),
+                request_streaming: false,
+                response_streaming: false,
+            },
+            MethodConfig {
+                name: "comments.create".to_string(),
+                request_streaming: false,
+                response_streaming: false,
+            },
+            MethodConfig {
+                name: "files.list".to_string(),
+                request_streaming: false,
+                response_streaming: false,
+            },
+            MethodConfig {
+                name: "files.upload".to_string(),
+                request_streaming: true,
+                response_streaming: false,
+            },
+            MethodConfig {
+                name: "files.download".to_string(),
+                request_streaming: false,
+                response_streaming: true,
+            },
+        ]
     }
 
-    std::mem::forget(json);
-}
-
-/// List stream types this module handles
-#[no_mangle]
-pub extern "C" fn list_streams(result_ptr: *mut i32, result_len: *mut i32) {
-    let streams = vec![
-        StreamConfig {
-            stream_type: "chat".to_string(),
-            bidirectional: true,
-        },
-        StreamConfig {
-            stream_type: "notifications".to_string(),
-            bidirectional: false,
-        },
-    ];
-
-    let json = serde_json::to_vec(&streams).unwrap();
-    let ptr = bindings::alloc(json.len() as i32);
-
-    unsafe {
-        std::ptr::copy_nonoverlapping(json.as_ptr(), ptr, json.len());
-        *result_ptr = ptr as i32;
-        *result_len = json.len() as i32;
+    fn list_streams() -> Vec<StreamConfig> {
+        vec![
+            StreamConfig {
+                stream_type: "chat".to_string(),
+                bidirectional: true,
+            },
+            StreamConfig {
+                stream_type: "notifications".to_string(),
+                bidirectional: false,
+            },
+        ]
     }
 
-    std::mem::forget(json);
-}
+    fn handle_request(req: Request) -> Response {
+        // Convert WIT Request to internal Request
+        let internal_req = crate::types::Request {
+            method: req.method,
+            payload: req.payload,
+            input_stream: req.input_stream,
+            metadata: req.metadata,
+            context: crate::types::RequestContext {
+                request_id: req.context.request_id,
+                service_name: req.context.service_name,
+                timestamp: req.context.timestamp,
+                transport_info: req.context.transport_info.map(|t| crate::types::TransportInfo {
+                    protocol: t.protocol,
+                    endpoint: t.endpoint,
+                }),
+            },
+        };
 
-/// Handle RPC request
-#[no_mangle]
-pub extern "C" fn handle_request(
-    req_ptr: i32,
-    req_len: i32,
-    result_ptr: *mut i32,
-    result_len: *mut i32,
-) {
-    let req_bytes = unsafe { std::slice::from_raw_parts(req_ptr as *const u8, req_len as usize) };
-
-    let request: Request = match serde_json::from_slice(req_bytes) {
-        Ok(r) => r,
-        Err(e) => {
-            let error_response = Response {
-                code: codes::BAD_REQUEST,
+        // Call handler
+        let internal_resp = match internal_req.method.as_str() {
+            "comments.list" => handlers::handle_list_comments(internal_req),
+            "comments.create" => handlers::handle_create_comment(internal_req),
+            "files.list" => handlers::handle_list_files(internal_req),
+            "files.upload" => handlers::handle_upload_file(internal_req),
+            "files.download" => handlers::handle_download_file(internal_req),
+            _ => crate::types::Response {
+                code: crate::types::codes::NOT_FOUND,
                 payload: None,
                 output_stream: None,
                 metadata: vec![],
-                error: Some(ErrorDetails {
-                    message: format!("Invalid request: {}", e),
-                    code: "INVALID_REQUEST".to_string(),
+                error: Some(crate::types::ErrorDetails {
+                    message: format!("Unknown method: {}", internal_req.method),
+                    code: "METHOD_NOT_FOUND".to_string(),
                     details: None,
                 }),
-            };
+            },
+        };
 
-            write_response(error_response, result_ptr, result_len);
-            return;
-        },
-    };
-
-    let response = match request.method.as_str() {
-        "comments.list" => handlers::handle_list_comments(request),
-        "comments.create" => handlers::handle_create_comment(request),
-        "files.list" => handlers::handle_list_files(request),
-        "files.upload" => handlers::handle_upload_file(request),
-        "files.download" => handlers::handle_download_file(request),
-        _ => Response {
-            code: codes::NOT_FOUND,
-            payload: None,
-            output_stream: None,
-            metadata: vec![],
-            error: Some(ErrorDetails {
-                message: format!("Unknown method: {}", request.method),
-                code: "METHOD_NOT_FOUND".to_string(),
-                details: None,
+        // Convert internal Response to WIT Response
+        Response {
+            code: internal_resp.code,
+            payload: internal_resp.payload,
+            output_stream: internal_resp.output_stream,
+            metadata: internal_resp.metadata,
+            error: internal_resp.error.map(|e| WitErrorDetails {
+                message: e.message,
+                code: e.code,
+                details: e.details,
             }),
-        },
-    };
+        }
+    }
 
-    write_response(response, result_ptr, result_len);
-}
+    fn handle_stream_message(ctx: StreamContext, payload: Vec<u8>) -> Response {
+        let internal_ctx = crate::types::StreamContext {
+            stream_id: ctx.stream_id,
+            stream_type: ctx.stream_type,
+            metadata: ctx.metadata,
+        };
 
-/// Handle stream message
-#[no_mangle]
-pub extern "C" fn handle_stream_message(
-    ctx_ptr: i32,
-    ctx_len: i32,
-    payload_ptr: i32,
-    payload_len: i32,
-    result_ptr: *mut i32,
-    result_len: *mut i32,
-) {
-    let ctx_bytes = unsafe { std::slice::from_raw_parts(ctx_ptr as *const u8, ctx_len as usize) };
-
-    let context: StreamContext = match serde_json::from_slice(ctx_bytes) {
-        Ok(c) => c,
-        Err(e) => {
-            let error_response = Response {
-                code: codes::BAD_REQUEST,
+        let internal_resp = match internal_ctx.stream_type.as_str() {
+            "chat" => handlers::handle_chat_stream(internal_ctx, payload),
+            "notifications" => handlers::handle_notification_stream(internal_ctx, payload),
+            _ => crate::types::Response {
+                code: crate::types::codes::NOT_FOUND,
                 payload: None,
                 output_stream: None,
                 metadata: vec![],
-                error: Some(ErrorDetails {
-                    message: format!("Invalid context: {}", e),
-                    code: "INVALID_CONTEXT".to_string(),
+                error: Some(crate::types::ErrorDetails {
+                    message: format!("Unknown stream type: {}", internal_ctx.stream_type),
+                    code: "STREAM_TYPE_NOT_FOUND".to_string(),
                     details: None,
                 }),
-            };
+            },
+        };
 
-            write_response(error_response, result_ptr, result_len);
-            return;
-        },
-    };
-
-    let payload = unsafe {
-        std::slice::from_raw_parts(payload_ptr as *const u8, payload_len as usize).to_vec()
-    };
-
-    let response = match context.stream_type.as_str() {
-        "chat" => handlers::handle_chat_stream(context, payload),
-        "notifications" => handlers::handle_notification_stream(context, payload),
-        _ => Response {
-            code: codes::NOT_FOUND,
-            payload: None,
-            output_stream: None,
-            metadata: vec![],
-            error: Some(ErrorDetails {
-                message: format!("Unknown stream type: {}", context.stream_type),
-                code: "STREAM_TYPE_NOT_FOUND".to_string(),
-                details: None,
+        Response {
+            code: internal_resp.code,
+            payload: internal_resp.payload,
+            output_stream: internal_resp.output_stream,
+            metadata: internal_resp.metadata,
+            error: internal_resp.error.map(|e| WitErrorDetails {
+                message: e.message,
+                code: e.code,
+                details: e.details,
             }),
-        },
-    };
-
-    write_response(response, result_ptr, result_len);
-}
-
-fn write_response(response: Response, result_ptr: *mut i32, result_len: *mut i32) {
-    let json = serde_json::to_vec(&response).unwrap();
-    let ptr = bindings::alloc(json.len() as i32);
-
-    unsafe {
-        std::ptr::copy_nonoverlapping(json.as_ptr(), ptr, json.len());
-        *result_ptr = ptr as i32;
-        *result_len = json.len() as i32;
+        }
     }
-
-    std::mem::forget(json);
 }
+
+export!(Component);

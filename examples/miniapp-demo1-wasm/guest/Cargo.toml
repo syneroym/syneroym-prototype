@@ -7,7 +7,9 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
+wit-bindgen = "0.25.0"
 serde = { workspace = true }
+mime_guess = "2.0.4"
 serde_json = { workspace = true }
 chrono = { workspace = true }
 
