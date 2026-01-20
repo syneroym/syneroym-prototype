@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rusqlite::{params_from_iter, Connection};
+use rusqlite::Connection;
 use serde_json::Value;
 
 pub struct DbOperations;

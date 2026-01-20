@@ -27,6 +27,9 @@ python = "3.14"
 # Java for Android tooling (CLI usage, not Android Studio itself)
 java = "17"
 
+# Protobuf
+protobuf = "latest"
+
 # -------------------------------------------------------------------
 
 [hooks]

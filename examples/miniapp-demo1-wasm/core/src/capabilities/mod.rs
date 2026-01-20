@@ -3,13 +3,9 @@ pub mod files;
 pub mod messaging;
 pub mod streams;
 
-use anyhow::Result;
 use rusqlite::Connection;
-use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::mpsc;
 
 /// Host capabilities provided to WASM
 #[derive(Clone)]

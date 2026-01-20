@@ -12,6 +12,7 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+tracing = { workspace = true }
 
 axum = { version = "0.7", features = ["multipart", "ws"] }
 tower = "0.4"

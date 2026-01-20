@@ -3,6 +3,7 @@ use rusqlite::Connection;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use wasm_service_core::{HostCapabilities, WasmRuntime};
+#[cfg(feature = "grpc")]
 use wasm_service_grpc::GrpcTransport;
 use wasm_service_http::HttpTransport;
 
@@ -74,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("WASM module loaded from {}", args.wasm_path);
 
     // Discover module capabilities
-    let module_caps = runtime.discover_capabilities()?;
+    let module_caps = runtime.discover_capabilities().await?;
     tracing::info!(
         "Module exposes {} methods and {} stream types",
         module_caps.methods.len(),
@@ -100,7 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Start HTTP transport
     let http_transport = HttpTransport::new(runtime.clone(), args.service_name.clone());
-    let http_router = http_transport.build_router();
+    let http_router = http_transport.build_router().await;
     let http_addr = SocketAddr::from(([127, 0, 0, 1], args.http_port));
 
     let http_server = tokio::spawn(async move {
@@ -110,14 +111,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Start gRPC transport if enabled
-    let grpc_server = if args.enable_grpc {
-        let grpc_transport = GrpcTransport::new(runtime.clone(), args.service_name.clone());
-        let grpc_addr = SocketAddr::from(([127, 0, 0, 1], args.grpc_port));
+    let grpc_server: Option<tokio::task::JoinHandle<()>> = if args.enable_grpc {
+        #[cfg(feature = "grpc")]
+        {
+            let grpc_transport = GrpcTransport::new(runtime.clone(), args.service_name.clone());
+            let grpc_addr = SocketAddr::from(([127, 0, 0, 1], args.grpc_port));
 
-        Some(tokio::spawn(async move {
-            tracing::info!("gRPC server listening on {}", grpc_addr);
-            grpc_transport.serve(grpc_addr).await.unwrap();
-        }))
+            Some(tokio::spawn(async move {
+                tracing::info!("gRPC server listening on {}", grpc_addr);
+                grpc_transport.serve(grpc_addr).await.unwrap();
+            }))
+        }
+        #[cfg(not(feature = "grpc"))]
+        {
+            tracing::warn!("gRPC enabled in args but 'grpc' feature is disabled. Ignoring.");
+            None
+        }
     } else {
         None
     };

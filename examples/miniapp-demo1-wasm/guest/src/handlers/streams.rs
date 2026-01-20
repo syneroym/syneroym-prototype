@@ -1,6 +1,6 @@
-use crate::bindings::{DbQuery, MessageStream};
-use crate::types::*;
-use serde::{Deserialize, Serialize};
+use crate::bindings::wasm::service::{database, messaging, types::*};
+use crate::codes;
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 struct ChatMessage {
@@ -26,15 +26,13 @@ pub fn handle_chat_stream(ctx: StreamContext, payload: Vec<u8>) -> Response {
         },
     };
 
-    // Validate message
     if message.text.len() > 500 {
-        let msg_stream = MessageStream;
         let error = serde_json::json!({
             "error": "Message too long",
             "max_length": 500
         });
 
-        let _ = msg_stream.send(&ctx.stream_id, serde_json::to_vec(&error).unwrap());
+        let _ = messaging::send(&ctx.stream_id, &serde_json::to_vec(&error).unwrap());
 
         return Response {
             code: codes::BAD_REQUEST,
@@ -45,13 +43,11 @@ pub fn handle_chat_stream(ctx: StreamContext, payload: Vec<u8>) -> Response {
         };
     }
 
-    // Store message
-    let db = DbQuery;
     let data = serde_json::json!({
         "text": format!("{}: {}", message.user, message.text)
     });
 
-    let message_id = match db.insert("comments", serde_json::to_vec(&data).unwrap()) {
+    let message_id = match database::insert("comments", &serde_json::to_vec(&data).unwrap()) {
         Ok(id) => id,
         Err(e) => {
             return Response {
@@ -59,26 +55,19 @@ pub fn handle_chat_stream(ctx: StreamContext, payload: Vec<u8>) -> Response {
                 payload: None,
                 output_stream: None,
                 metadata: vec![],
-                error: Some(ErrorDetails {
-                    message: format!("Database error: {}", e),
-                    code: "DB_ERROR".to_string(),
-                    details: None,
-                }),
+                error: Some(e),
             }
         },
     };
 
-    // Send confirmation to sender
-    let msg_stream = MessageStream;
     let confirmation = serde_json::json!({
         "type": "sent",
         "messageId": message_id,
         "timestamp": chrono::Utc::now().to_rfc3339()
     });
 
-    let _ = msg_stream.send(&ctx.stream_id, serde_json::to_vec(&confirmation).unwrap());
+    let _ = messaging::send(&ctx.stream_id, &serde_json::to_vec(&confirmation).unwrap());
 
-    // Broadcast to all chat participants
     let broadcast = serde_json::json!({
         "type": "new_message",
         "from": message.user,
@@ -86,7 +75,7 @@ pub fn handle_chat_stream(ctx: StreamContext, payload: Vec<u8>) -> Response {
         "messageId": message_id
     });
 
-    let _ = msg_stream.broadcast("chat", serde_json::to_vec(&broadcast).unwrap());
+    let _ = messaging::broadcast("chat", &serde_json::to_vec(&broadcast).unwrap());
 
     Response {
         code: codes::SUCCESS,
@@ -98,16 +87,12 @@ pub fn handle_chat_stream(ctx: StreamContext, payload: Vec<u8>) -> Response {
 }
 
 pub fn handle_notification_stream(ctx: StreamContext, payload: Vec<u8>) -> Response {
-    // Notifications are typically one-way
-    let msg_stream = MessageStream;
-
-    // Echo back acknowledgment
     let ack = serde_json::json!({
         "type": "ack",
         "received": String::from_utf8_lossy(&payload).to_string()
     });
 
-    let _ = msg_stream.send(&ctx.stream_id, serde_json::to_vec(&ack).unwrap());
+    let _ = messaging::send(&ctx.stream_id, &serde_json::to_vec(&ack).unwrap());
 
     Response {
         code: codes::SUCCESS,

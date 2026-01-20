@@ -4,15 +4,16 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Multipart, Path, State,
     },
-    http::{header, HeaderMap, Method, StatusCode, Uri},
+    http::{HeaderMap, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::{get, post},
     Router,
 };
 use bytes::Bytes;
-use futures::StreamExt;
+use futures::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use tracing;
 use wasm_service_core::*;
 
 pub struct HttpTransport {
@@ -28,8 +29,8 @@ impl HttpTransport {
         }
     }
 
-    pub fn build_router(self) -> Router {
-        let capabilities = self.runtime.discover_capabilities().unwrap();
+    pub async fn build_router(self) -> Router {
+        let capabilities = self.runtime.discover_capabilities().await.unwrap();
 
         let state = Arc::new(self);
         let mut router = Router::new();
@@ -65,7 +66,7 @@ impl HttpTransport {
     async fn handle_rpc_method(
         State(transport): State<Arc<HttpTransport>>,
         uri: Uri,
-        method: Method,
+        _method: Method,
         headers: HeaderMap,
         body: Bytes,
     ) -> impl IntoResponse {
@@ -100,12 +101,20 @@ impl HttpTransport {
         // Handle multipart upload
         if let Ok(Some(field)) = multipart.next_field().await {
             let filename = field.file_name().map(|s| s.to_string());
-            let stream = field.into_stream();
 
-            // Create input stream
-            let stream_reader = tokio_util::io::StreamReader::new(
-                stream.map(|r| r.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))),
-            );
+            let bytes = match field.bytes().await {
+                Ok(b) => b,
+                Err(e) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Upload error: {}", e),
+                    )
+                        .into_response()
+                },
+            };
+
+            // Create input stream from buffered bytes
+            let stream_reader = std::io::Cursor::new(bytes);
 
             let stream_id = transport
                 .runtime
@@ -249,9 +258,9 @@ impl HttpTransport {
     fn canonical_to_http(response: CanonicalResponse) -> Response {
         let status = Self::code_to_http_status(response.code);
 
-        if let Some(stream_id) = response.output_stream {
+        if let Some(_stream_id) = response.output_stream {
             // Streaming response
-            Self::stream_response(stream_id, status, response.metadata)
+            Self::stream_response(status, response.metadata)
         } else {
             // Regular response
             let mut res = Response::new(Body::from(response.payload.unwrap_or_default()));
@@ -270,11 +279,7 @@ impl HttpTransport {
         }
     }
 
-    fn stream_response(
-        stream_id: String,
-        status: StatusCode,
-        metadata: Vec<(String, String)>,
-    ) -> Response {
+    fn stream_response(status: StatusCode, metadata: Vec<(String, String)>) -> Response {
         // This is a placeholder - in full implementation, we'd stream from the output stream
         let mut res = Response::new(Body::from("Streaming not fully implemented"));
         *res.status_mut() = status;

@@ -1,15 +1,10 @@
+#[allow(warnings)]
 mod bindings;
+
 mod handlers;
-mod types;
 
-use wit_bindgen::generate;
-
-generate!({
-    world: "handler",
-    path: "wit",
-});
-
-use crate::app::handler::types::ErrorDetails as WitErrorDetails;
+use bindings::exports::wasm::service::handler::Guest;
+use bindings::wasm::service::types::*;
 
 struct Component;
 
@@ -58,92 +53,52 @@ impl Guest for Component {
     }
 
     fn handle_request(req: Request) -> Response {
-        // Convert WIT Request to internal Request
-        let internal_req = crate::types::Request {
-            method: req.method,
-            payload: req.payload,
-            input_stream: req.input_stream,
-            metadata: req.metadata,
-            context: crate::types::RequestContext {
-                request_id: req.context.request_id,
-                service_name: req.context.service_name,
-                timestamp: req.context.timestamp,
-                transport_info: req.context.transport_info.map(|t| crate::types::TransportInfo {
-                    protocol: t.protocol,
-                    endpoint: t.endpoint,
-                }),
-            },
-        };
-
-        // Call handler
-        let internal_resp = match internal_req.method.as_str() {
-            "comments.list" => handlers::handle_list_comments(internal_req),
-            "comments.create" => handlers::handle_create_comment(internal_req),
-            "files.list" => handlers::handle_list_files(internal_req),
-            "files.upload" => handlers::handle_upload_file(internal_req),
-            "files.download" => handlers::handle_download_file(internal_req),
-            _ => crate::types::Response {
-                code: crate::types::codes::NOT_FOUND,
+        match req.method.as_str() {
+            "comments.list" => handlers::comments::handle_list_comments(req),
+            "comments.create" => handlers::comments::handle_create_comment(req),
+            "files.list" => handlers::files::handle_list_files(req),
+            "files.upload" => handlers::files::handle_upload_file(req),
+            "files.download" => handlers::files::handle_download_file(req),
+            _ => Response {
+                code: codes::NOT_FOUND,
                 payload: None,
                 output_stream: None,
                 metadata: vec![],
-                error: Some(crate::types::ErrorDetails {
-                    message: format!("Unknown method: {}", internal_req.method),
+                error: Some(ErrorDetails {
+                    message: format!("Unknown method: {}", req.method),
                     code: "METHOD_NOT_FOUND".to_string(),
                     details: None,
                 }),
             },
-        };
-
-        // Convert internal Response to WIT Response
-        Response {
-            code: internal_resp.code,
-            payload: internal_resp.payload,
-            output_stream: internal_resp.output_stream,
-            metadata: internal_resp.metadata,
-            error: internal_resp.error.map(|e| WitErrorDetails {
-                message: e.message,
-                code: e.code,
-                details: e.details,
-            }),
         }
     }
 
     fn handle_stream_message(ctx: StreamContext, payload: Vec<u8>) -> Response {
-        let internal_ctx = crate::types::StreamContext {
-            stream_id: ctx.stream_id,
-            stream_type: ctx.stream_type,
-            metadata: ctx.metadata,
-        };
-
-        let internal_resp = match internal_ctx.stream_type.as_str() {
-            "chat" => handlers::handle_chat_stream(internal_ctx, payload),
-            "notifications" => handlers::handle_notification_stream(internal_ctx, payload),
-            _ => crate::types::Response {
-                code: crate::types::codes::NOT_FOUND,
+        match ctx.stream_type.as_str() {
+            "chat" => handlers::streams::handle_chat_stream(ctx, payload),
+            "notifications" => handlers::streams::handle_notification_stream(ctx, payload),
+            _ => Response {
+                code: codes::NOT_FOUND,
                 payload: None,
                 output_stream: None,
                 metadata: vec![],
-                error: Some(crate::types::ErrorDetails {
-                    message: format!("Unknown stream type: {}", internal_ctx.stream_type),
+                error: Some(ErrorDetails {
+                    message: format!("Unknown stream type: {}", ctx.stream_type),
                     code: "STREAM_TYPE_NOT_FOUND".to_string(),
                     details: None,
                 }),
             },
-        };
-
-        Response {
-            code: internal_resp.code,
-            payload: internal_resp.payload,
-            output_stream: internal_resp.output_stream,
-            metadata: internal_resp.metadata,
-            error: internal_resp.error.map(|e| WitErrorDetails {
-                message: e.message,
-                code: e.code,
-                details: e.details,
-            }),
         }
     }
 }
 
-export!(Component);
+bindings::export!(Component with_types_in bindings);
+
+pub mod codes {
+    pub const SUCCESS: u32 = 0;
+    pub const BAD_REQUEST: u32 = 1;
+    pub const NOT_FOUND: u32 = 2;
+    pub const INTERNAL_ERROR: u32 = 3;
+    pub const UNAUTHORIZED: u32 = 4;
+    pub const FORBIDDEN: u32 = 5;
+}

@@ -24,3 +24,6 @@ mime_guess = { workspace = true }
 
 async-trait = "0.1"
 tokio-util = { version = "0.7", features = ["io", "codec"] }
+
+[build-dependencies]
+wasmtime = { workspace = true }

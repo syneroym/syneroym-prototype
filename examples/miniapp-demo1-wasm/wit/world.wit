@@ -1,0 +1,135 @@
+package wasm:service;
+
+interface types {
+    record request {
+        method: string,
+        payload: option<list<u8>>,
+        input-stream: option<string>,
+        metadata: list<tuple<string, string>>,
+        context: request-context,
+    }
+
+    record request-context {
+        request-id: string,
+        service-name: string,
+        timestamp: string,
+        transport-info: option<transport-info>,
+    }
+
+    record transport-info {
+        protocol: string,
+        endpoint: string,
+    }
+
+    record response {
+        code: u32,
+        payload: option<list<u8>>,
+        output-stream: option<string>,
+        metadata: list<tuple<string, string>>,
+        error: option<error-details>,
+    }
+
+    record error-details {
+        message: string,
+        code: string,
+        details: option<list<u8>>,
+    }
+
+    record stream-context {
+        stream-id: string,
+        stream-type: string,
+        metadata: list<tuple<string, string>>,
+    }
+
+    record method-config {
+        name: string,
+        request-streaming: bool,
+        response-streaming: bool,
+    }
+
+    record stream-config {
+        stream-type: string,
+        bidirectional: bool,
+    }
+}
+
+interface database {
+    use types.{error-details};
+
+    record row {
+        columns: list<list<u8>>,
+    }
+
+    record query-result {
+        rows: list<row>,
+    }
+
+    execute: func(sql: string, params: list<string>) -> result<query-result, error-details>;
+    insert: func(table: string, data: list<u8>) -> result<u64, error-details>;
+    update: func(table: string, id: u64, data: list<u8>) -> result<bool, error-details>;
+    delete: func(table: string, id: u64) -> result<bool, error-details>;
+}
+
+interface files {
+    use types.{error-details};
+
+    record file-info {
+        name: string,
+        size: u64,
+        content-type: string,
+    }
+
+    %list: func(prefix: option<string>) -> result<list<file-info>, error-details>;
+    read-small: func(path: string) -> result<list<u8>, error-details>;
+    write-small: func(path: string, data: list<u8>) -> result<_, error-details>;
+    delete: func(path: string) -> result<bool, error-details>;
+    exists: func(path: string) -> bool;
+    get-info: func(path: string) -> result<file-info, error-details>;
+}
+
+interface streams {
+    use types.{error-details};
+
+    record stream-chunk {
+        data: list<u8>,
+        eof: bool,
+    }
+
+    record stream-info {
+        id: string,
+        content-type: string,
+        content-length: option<u64>,
+        filename: option<string>,
+    }
+
+    read: func(stream-id: string, max-bytes: u32) -> result<stream-chunk, error-details>;
+    write: func(stream-id: string, data: list<u8>) -> result<u32, error-details>;
+    close-input: func(stream-id: string) -> result<_, error-details>;
+    finish-output: func(stream-id: string) -> result<_, error-details>;
+    get-info: func(stream-id: string) -> result<stream-info, error-details>;
+}
+
+interface messaging {
+    use types.{error-details};
+
+    send: func(stream-id: string, payload: list<u8>) -> result<_, error-details>;
+    broadcast: func(stream-type: string, payload: list<u8>) -> result<u32, error-details>;
+    close: func(stream-id: string) -> result<_, error-details>;
+}
+
+interface handler {
+    use types.{method-config, stream-config, request, response, stream-context};
+
+    list-methods: func() -> list<method-config>;
+    list-streams: func() -> list<stream-config>;
+    handle-request: func(req: request) -> response;
+    handle-stream-message: func(ctx: stream-context, payload: list<u8>) -> response;
+}
+
+world service {
+    import database;
+    import files;
+    import streams;
+    import messaging;
+    export handler;
+}

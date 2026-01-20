@@ -7,11 +7,12 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-wit-bindgen = "0.25.0"
+wit-bindgen = { version = "0.30" }
+wit-bindgen-rt = { version = "0.30", features = ["bitflags"] }
 serde = { workspace = true }
-mime_guess = "2.0.4"
 serde_json = { workspace = true }
-chrono = { workspace = true }
+chrono = { version = "0.4", default-features = false, features = ["serde", "std", "clock"] }
+mime_guess = { workspace = true }
 
 [profile.release]
 opt-level = "z"
@@ -19,3 +20,9 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+[package.metadata.component]
+package = "wasm:service"
+
+[package.metadata.component.target]
+path = "../wit"
