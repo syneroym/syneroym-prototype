@@ -1,5 +1,18 @@
 [workspace]
-members = ["lib-rust/*", "app-xplatform/src-tauri", "app-cli", "examples/*"]
+members = [
+    "lib-rust/*",
+    "app-xplatform/src-tauri",
+    "app-cli",
+
+    "examples/miniapp-demo1-web",
+
+    # These wasm will go into the lib-rust folder later, and only one top level example will remain
+    "examples/miniapp-demo1-wasm/core",
+    "examples/miniapp-demo1-wasm/transports/http",
+    "examples/miniapp-demo1-wasm/transports/grpc",
+    "examples/miniapp-demo1-wasm/host",
+    "examples/miniapp-demo1-wasm/guest",
+]
 resolver = "3"
 
 # Profiles for app size https://v2.tauri.app/concept/size/
@@ -39,3 +52,18 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+thiserror = "1.0"
+uuid = { version = "1.10", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Wasmtime
+wasmtime = "25.0"
+wasmtime-wasi = "25.0"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Utilities
+futures = "0.3"
+bytes = "1.7"
+mime_guess = "2.0"

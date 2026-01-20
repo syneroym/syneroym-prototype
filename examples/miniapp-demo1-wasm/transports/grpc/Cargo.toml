@@ -1,0 +1,22 @@
+[package]
+name = "wasm-service-grpc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wasm-service-core = { path = "../../core" }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+tonic = "0.12"
+prost = "0.13"
+futures = { workspace = true }
+tokio-stream = "0.1"
+
+[build-dependencies]
+tonic-build = "0.12"
