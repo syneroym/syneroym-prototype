@@ -9,6 +9,7 @@ license.workspace = true
 common = { package = "syneroym-common", path = "../common" }
 net = { package = "syneroym-net", path = "../net" }
 net-iroh = { package = "syneroym-net-iroh", path = "../net-iroh" }
+net-webrtc = { package = "syneroym-net-webrtc", path = "../net-webrtc" }
 protocol-http = { package = "syneroym-protocol-http", path = "../protocol-http" }
 store-interface = { package = "syneroym-store-interface", path = "../store-interface" }
 store-sqlite = { package = "syneroym-store-sqlite", path = "../store-sqlite" }

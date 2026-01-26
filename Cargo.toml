@@ -37,6 +37,7 @@ repository = "https://github.com/syneroym/syneroym"
 common = { package = "syneroym-common", path = "lib-rust/common" }
 net = { package = "syneroym-net", path = "lib-rust/net" }
 net-iroh = { package = "syneroym-net-iroh", path = "lib-rust/net-iroh" }
+net-webrtc = { package = "syneroym-net-webrtc", path = "lib-rust/net-webrtc" }
 protocol-base = { package = "syneroym-protocol-base", path = "lib-rust/protocol-base" }
 protocol-http = { package = "syneroym-protocol-http", path = "lib-rust/protocol-http" }
 store-interface = { package = "syneroym-store-interface", path = "lib-rust/store-interface" }

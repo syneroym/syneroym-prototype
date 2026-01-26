@@ -1,0 +1,17 @@
+[package]
+name = "syneroym-net-webrtc"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+common.workspace = true
+app-host.workspace = true
+protocol-base.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+serde_json.workspace = true
+webrtc = "0.10"
+base64 = "0.22"

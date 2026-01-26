@@ -92,6 +92,7 @@ impl Guest for Component {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 bindings::export!(Component with_types_in bindings);
 
 pub mod codes {

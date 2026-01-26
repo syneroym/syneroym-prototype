@@ -5,6 +5,8 @@ use std::path::PathBuf;
 pub struct Config {
     /// Iroh communication configuration
     pub comm_iroh: Option<IrohCommConfig>,
+    /// WebRTC communication configuration
+    pub comm_webrtc: Option<WebRtcCommConfig>,
     /// List of enabled communication interfaces (e.g. "iroh", "webrtc")
     pub enabled_comms: Vec<String>,
     /// List of ALPN protocols to accept/handle.
@@ -17,6 +19,7 @@ impl Default for Config {
     fn default() -> Config {
         Config {
             comm_iroh: Some(IrohCommConfig::default()),
+            comm_webrtc: Some(WebRtcCommConfig::default()),
             enabled_comms: vec!["iroh".to_string()],
             alpn_protocols: vec![],
             data_store_path: PathBuf::from("syneroym_data.db"),
@@ -41,6 +44,20 @@ impl Default for IrohCommConfig {
             secret_key_path: None,
             relay_url: None,
             rpc_port: None,
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct WebRtcCommConfig {
+    /// URL of the signaling server
+    pub signaling_server_url: Option<String>,
+}
+
+impl Default for WebRtcCommConfig {
+    fn default() -> Self {
+        Self {
+            signaling_server_url: None,
         }
     }
 }

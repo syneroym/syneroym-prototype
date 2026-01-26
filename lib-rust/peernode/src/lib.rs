@@ -58,18 +58,26 @@ impl PeerNode {
         &self,
         handlers: Vec<Arc<dyn ProtocolHandler>>,
     ) -> Result<Option<iroh::protocol::Router>> {
+        let mut iroh_router = None;
+
         for comm in &self.config.enabled_comms {
             match comm.as_str() {
                 "iroh" => {
                     info!("Initializing Iroh interface...");
-                    return net_iroh::init(&self.config, handlers.clone()).await;
+                    if let Some(router) = net_iroh::init(&self.config, handlers.clone()).await? {
+                        iroh_router = Some(router);
+                    }
+                },
+                "webrtc" => {
+                    info!("Initializing WebRTC interface...");
+                    net_webrtc::init(&self.config, handlers.clone()).await?;
                 },
                 _ => {
                     info!("Unknown or unimplemented communication interface: {}", comm);
                 },
             }
         }
-        Ok(None)
+        Ok(iroh_router)
     }
 
     async fn fetch_services(&self) -> Result<Vec<ServiceRecord>> {
