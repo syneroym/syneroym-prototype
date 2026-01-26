@@ -1,5 +1,8 @@
 use axum::{
-    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, State},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        State,
+    },
     response::IntoResponse,
     routing::get,
     Router,
@@ -30,15 +33,12 @@ pub async fn start_server(port: u16) {
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     info!("Signaling server listening on {}", addr);
-    
+
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> impl IntoResponse {
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
@@ -50,10 +50,10 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     // Or we just broadcast everything to everyone (simple signaling for 2 peers).
     // Let's go with a simple "broadcast to all other peers" model for this demo,
     // or a simple ID-based routing if the message has a "target" field.
-    
+
     // We'll use a broadcast channel for this connection so we can subscribe to messages from others.
     let (tx, mut rx) = broadcast::channel(100);
-    
+
     // Perform a simple handshake: wait for {"type": "register", "id": "my-id"}
     let peer_id = if let Some(Ok(msg)) = receiver.next().await {
         if let Message::Text(text) = msg {
@@ -78,7 +78,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
         None => {
             warn!("Client did not register correctly. Closing.");
             return;
-        }
+        },
     };
 
     info!("Peer registered: {}", peer_id);
@@ -110,9 +110,9 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                         warn!("Target peer {} not found", target);
                     }
                 } else {
-                   // Broadcast to all others? Or just ignore?
-                   // For "offer"/"answer", we usually need a target.
-                   warn!("Message without target received from {}", peer_id);
+                    // Broadcast to all others? Or just ignore?
+                    // For "offer"/"answer", we usually need a target.
+                    warn!("Message without target received from {}", peer_id);
                 }
             }
         }

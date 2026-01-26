@@ -30,10 +30,10 @@ async fn main() -> Result<()> {
         args::CliCommand::RunPeer(_) => {
             let peer = peernode::PeerNode::new(conf).await?;
             peer.bootstrap().await?;
-        }
+        },
         args::CliCommand::Version => {
             println!("Version: {}", env!("CARGO_PKG_VERSION"));
-        }
+        },
     }
 
     Ok(())

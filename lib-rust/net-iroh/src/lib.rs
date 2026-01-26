@@ -130,10 +130,10 @@ async fn handle_stream((mut send, mut recv): (SendStream, RecvStream)) -> Result
                 "--> wrote to service {} bytes, <-- wrote back to iroh {} bytes",
                 client_to_backend, backend_to_client
             );
-        }
+        },
         Err(e) => {
             error!("stream error: {e:?}");
-        }
+        },
     }
 
     Ok(())

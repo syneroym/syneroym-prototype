@@ -1,9 +1,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use store_interface::ServiceRecord;
 use rusqlite::Connection;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use store_interface::ServiceRecord;
 use store_interface::ServiceStore;
 use tracing::info;
 
@@ -17,7 +17,7 @@ impl SqliteStore {
     pub fn new(path: PathBuf) -> Result<Self> {
         info!("Opening SQLite store at {:?}", path);
         let conn = Connection::open(path)?;
-        
+
         // Ensure table exists
         conn.execute(
             "CREATE TABLE IF NOT EXISTS services (
@@ -41,7 +41,7 @@ impl ServiceStore for SqliteStore {
         let mut stmt = conn.prepare(
             "SELECT service_key, app_layer_protocol, service_image_manifest_ref FROM services",
         )?;
-        
+
         let service_iter = stmt.query_map([], |row| {
             Ok(ServiceRecord {
                 service_key: row.get(0)?,

@@ -1,5 +1,5 @@
-use common::config::Config;
 use anyhow::Result;
+use common::config::Config;
 use std::future::Future;
 
 pub trait NetworkInterface {

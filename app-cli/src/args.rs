@@ -25,8 +25,8 @@ impl Cli {
                 if let Some(ref secret_key_path) = args.secret_key_path {
                     fig = fig.merge(("comm_iroh.secret_key_path", secret_key_path));
                 }
-            }
-            CliCommand::Version => {}
+            },
+            CliCommand::Version => {},
         }
         fig
     }
@@ -69,7 +69,7 @@ mod tests {
 
         assert_eq!(conf.enabled_comms, vec!["iroh".to_string()]);
         if let Some(iroh) = conf.comm_iroh {
-             assert_eq!(iroh.secret_key_path, None);
+            assert_eq!(iroh.secret_key_path, None);
         }
     }
 
@@ -85,7 +85,7 @@ mod tests {
         };
 
         let conf = Config::default();
-        
+
         let fig = Figment::new().merge(Serialized::defaults(conf)); // Start with false
         let fig = cli.update_figment(fig);
         let conf: Config = fig.extract().unwrap();
