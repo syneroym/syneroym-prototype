@@ -44,7 +44,7 @@ protocol-http = { package = "syneroym-protocol-http", path = "lib-rust/protocol-
 store-interface = { package = "syneroym-store-interface", path = "lib-rust/store-interface" }
 store-sqlite = { package = "syneroym-store-sqlite", path = "lib-rust/store-sqlite" }
 app-host = { package = "syneroym-app-host", path = "lib-rust/app-host" }
-peer = { package = "syneroym-peer", path = "lib-rust/peer" }
+node = { package = "syneroym-node", path = "lib-rust/node" }
 
 # Common external dependencies
 clap = { version = "4.5", features = ["derive"] }

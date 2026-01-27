@@ -23,7 +23,7 @@ struct AppState {
 }
 
 pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
-    info!("Starting PeerNode Web Gateway on port {}, target: {:?}", port, target);
+    info!("Starting LocalNode Web Gateway on port {}, target: {:?}", port, target);
     
     let endpoint = Endpoint::bind().await?;
 
@@ -39,7 +39,7 @@ pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    info!("PeerNode Web Gateway listening on {}", addr);
+    info!("LocalNode Web Gateway listening on {}", addr);
 
     axum::serve(listener, app).await?;
 

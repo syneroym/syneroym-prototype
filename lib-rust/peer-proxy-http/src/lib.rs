@@ -19,7 +19,7 @@ struct AppState {
 
 pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
     info!(
-        "Starting PeerNode HTTP Proxy on port {}, target: {:?}",
+        "Starting LocalNode HTTP Proxy on port {}, target: {:?}",
         port, target
     );
 
@@ -33,7 +33,7 @@ pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
     let pxy_addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = TcpListener::bind(pxy_addr).await?;
 
-    info!("PeerNode HTTP Proxy listening on {}", pxy_addr);
+    info!("LocalNode HTTP Proxy listening on {}", pxy_addr);
 
     loop {
         let (client, cl_addr) = listener.accept().await?;

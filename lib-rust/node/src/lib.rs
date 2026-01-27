@@ -8,12 +8,12 @@ use std::sync::Arc;
 use store_interface::{ServiceRecord, ServiceStore};
 use tracing::info;
 
-pub struct PeerNode {
+pub struct LocalNode {
     config: Config,
     store: Arc<dyn ServiceStore>,
 }
 
-impl PeerNode {
+impl LocalNode {
     pub async fn new(config: Config) -> Result<Self> {
         // Initialize the store based on configuration (defaulting to SQLite for now)
         let store = Arc::new(store_sqlite::SqliteStore::new(
@@ -23,7 +23,7 @@ impl PeerNode {
     }
 
     pub async fn bootstrap(&self) -> Result<()> {
-        info!("Bootstrapping Syneroym PeerNode...");
+        info!("Bootstrapping Syneroym LocalNode...");
 
         // 1. Read Services Configuration
         let services = self.fetch_services().await?;
@@ -43,14 +43,14 @@ impl PeerNode {
             router.endpoint().online().await;
 
             let node_addr = endpoint.addr();
-            info!("Starting PeerNode Proxy HTTP...");
+            info!("Starting LocalNode Proxy HTTP...");
             peer_proxy_http::start(3000, node_addr).await?;
 
             // This makes sure the endpoint in the router is closed properly and connections close gracefully
             router.shutdown().await?;
         }
 
-        info!("PeerNode bootstrapped successfully.");
+        info!("LocalNode bootstrapped successfully.");
         Ok(())
     }
 

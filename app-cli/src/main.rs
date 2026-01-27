@@ -28,8 +28,8 @@ async fn main() -> Result<()> {
 
     match cli.command {
         args::CliCommand::RunPeer(_) => {
-            let peer = peer::PeerNode::new(conf).await?;
-            peer.bootstrap().await?;
+            let node = node::LocalNode::new(conf).await?;
+            node.bootstrap().await?;
         },
         args::CliCommand::Version => {
             println!("Version: {}", env!("CARGO_PKG_VERSION"));

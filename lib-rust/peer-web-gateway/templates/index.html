@@ -3,13 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PeerNode Gateway</title>
-    <style>body { font-family: sans-serif; padding: 2rem; text-align: center; }</style>
+    <title>LocalNode Gateway</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; }
+        .status { padding: 1rem; border-radius: 4px; margin-bottom: 1rem; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+    </style>
 </head>
 <body>
-    <h1>PeerNode Gateway</h1>
-    <p>Bootstrapping Secure Connection...</p>
-    <div id="status">Initializing...</div>
+    <h1>LocalNode Gateway</h1>
+    <div id="status"></div>
     <script>
         async function init() {
             const status = document.getElementById('status');
