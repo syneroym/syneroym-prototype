@@ -4,25 +4,21 @@ const TARGET_PEER_ID = "{{ target_peer_id }}";
 const MY_ID = "gateway-" + Math.random().toString(36).substr(2, 9);
 
 let peerConnection;
-let dataChannel;
 let ws;
 let isConnected = false;
 let connectionPromise = null;
-
-// Queue for pending requests if channel isn't ready
-const pendingRequests = [];
 
 async function bootstrap() {
     if (isConnected) return;
     if (connectionPromise) return connectionPromise;
 
     connectionPromise = new Promise((resolve, reject) => {
-        console.log("[SW] Connecting to Signaling Server:", SIGNALING_SERVER_URL); 
-        ws = new WebSocket(SIGNALING_SERVER_URL); 
+        console.log("[SW] Connecting to Signaling Server:", SIGNALING_SERVER_URL);
+        ws = new WebSocket(SIGNALING_SERVER_URL);
 
         ws.onopen = () => {
-            console.log("[SW] WS Open. Registering as:", MY_ID); 
-            ws.send(JSON.stringify({ type: "register", id: MY_ID })); 
+            console.log("[SW] WS Open. Registering as:", MY_ID);
+            ws.send(JSON.stringify({ type: "register", id: MY_ID }));
             startWebRTC(resolve, reject);
         };
 
@@ -41,32 +37,32 @@ async function bootstrap() {
 }
 
 async function startWebRTC(resolve, reject) {
-    console.log("[SW] Starting WebRTC..."); 
+    console.log("[SW] Starting WebRTC...");
     const config = {
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
     };
 
     peerConnection = new RTCPeerConnection(config);
 
-    // Create Data Channel
-    dataChannel = peerConnection.createDataChannel("syneroym"); 
-    setupDataChannel(dataChannel, resolve);
-
     peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-            // Send candidate to peer logic here
+            // Trickle ICE not implemented in simple demo
         }
     };
 
     peerConnection.onconnectionstatechange = () => {
-        console.log("[SW] Connection State:", peerConnection.connectionState); 
+        console.log("[SW] Connection State:", peerConnection.connectionState);
+        if (peerConnection.connectionState === 'connected') {
+            isConnected = true;
+            resolve();
+        }
     };
 
     // Create Offer
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
 
-    console.log("[SW] Sending Offer to:", TARGET_PEER_ID); 
+    console.log("[SW] Sending Offer to:", TARGET_PEER_ID);
     ws.send(JSON.stringify({
         type: "offer",
         target: TARGET_PEER_ID,
@@ -76,7 +72,7 @@ async function startWebRTC(resolve, reject) {
 }
 
 async function handleSignalingMessage(msg) {
-    console.log("[SW] Signaling Msg:", msg.type); 
+    console.log("[SW] Signaling Msg:", msg.type);
     switch (msg.type) {
         case "answer":
             await peerConnection.setRemoteDescription(new RTCSessionDescription({
@@ -92,98 +88,24 @@ async function handleSignalingMessage(msg) {
     }
 }
 
-function setupDataChannel(dc, resolve) {
-    dc.onopen = () => {
-        console.log("[SW] DataChannel Open!"); 
-        isConnected = true;
-        resolve();
-    };
-    dc.onmessage = handleDataChannelMessage;
-    dc.onerror = (e) => console.error("[SW] DataChannel Error:", e);
-}
-
 // --------------------------------------------------------------------------
 // Request/Response Handling
 // --------------------------------------------------------------------------
 
-let activeRequestResolve = null; 
-let activeResponseStreamController = null; 
-let responseBuffer = []; 
-
-function handleDataChannelMessage(event) {
-    const chunk = new Uint8Array(event.data);
-    
-    if (activeResponseStreamController) {
-        activeResponseStreamController.enqueue(chunk);
-    } else if (activeRequestResolve) {
-        responseBuffer.push(...chunk);
-        
-        const endpoint = findDoubleCRLF(responseBuffer);
-        if (endpoint !== -1) {
-            const headerBytes = new Uint8Array(responseBuffer.slice(0, endpoint));
-            const bodyBytes = new Uint8Array(responseBuffer.slice(endpoint + 4));
-            
-            const headerStr = new TextDecoder().decode(headerBytes);
-            const { status, headers } = parseHeaders(headerStr);
-            
-            const stream = new ReadableStream({
-                start(controller) {
-                    activeResponseStreamController = controller;
-                    if (bodyBytes.length > 0) {
-                        controller.enqueue(bodyBytes);
-                    }
-                }
-            });
-            
-            activeRequestResolve(new Response(stream, { status, headers }));
-            responseBuffer = [];
-        }
-    }
-}
-
-function findDoubleCRLF(buffer) {
-    for (let i = 0; i < buffer.length - 3; i++) {
-        if (buffer[i]===13 && buffer[i+1]===10 && buffer[i+2]===13 && buffer[i+3]===10) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-function parseHeaders(headerStr) {
-    const lines = headerStr.split('\r\n');
-    const statusLine = lines[0];
-    const statusMatch = statusLine.match(/^HTTP\/1\.1 (\d+) (.+)$/);
-    const status = statusMatch ? parseInt(statusMatch[1]) : 200;
-    
-    const headers = new Headers();
-    for (let i = 1; i < lines.length; i++) {
-        const line = lines[i];
-        if (!line) continue;
-        const colon = line.indexOf(':');
-        if (colon > 0) {
-            headers.append(line.substring(0, colon).trim(), line.substring(colon + 1).trim());
-        }
-    }
-    return { status, headers };
-}
-
 self.addEventListener('install', (event) => {
-    console.log('[SW] Installing'); 
+    console.log('[SW] Installing');
     self.skipWaiting();
     event.waitUntil(bootstrap().catch(err => console.error("[SW] Bootstrap failed:", err)));
 });
 
 self.addEventListener('activate', (event) => {
-    console.log('[SW] Activating'); 
+    console.log('[SW] Activating');
     event.waitUntil(clients.claim());
 });
 
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
     if (url.searchParams.has('sw')) return;
-
-    // Do not intercept if it is the SW itself (handled by 'sw' check above, but for safety)
     if (url.pathname === '/sw.js') return;
 
     event.respondWith(
@@ -211,47 +133,136 @@ self.addEventListener('fetch', (event) => {
 });
 
 async function sendRequest(serviceName, request) {
-    const method = request.method;
-    const path = new URL(request.url).pathname + new URL(request.url).search;
-    const headers = [];
-    for (const [k, v] of request.headers) {
-        headers.push(`${k}: ${v}`);
-    }
-    
-    let reqStr = `${method} ${path} HTTP/1.1\r\n`;
-    reqStr += headers.join('\r\n') + '\r\n\r\n';
-    
-    const reqBytes = new TextEncoder().encode(reqStr);
-    const serviceBytes = new TextEncoder().encode(serviceName);
-    
-    let bodyBytes = new Uint8Array(0);
-    if (method !== 'GET' && method !== 'HEAD') {
-         const buf = await request.arrayBuffer();
-         bodyBytes = new Uint8Array(buf);
-    }
-    
-    const totalLen = 1 + serviceBytes.length + reqBytes.length + bodyBytes.length;
-    const buffer = new Uint8Array(totalLen);
-    
-    buffer[0] = serviceBytes.length;
-    buffer.set(serviceBytes, 1);
-    buffer.set(reqBytes, 1 + serviceBytes.length);
-    buffer.set(bodyBytes, 1 + serviceBytes.length + reqBytes.length);
-    
-    while (activeRequestResolve) {
-        await new Promise(r => setTimeout(r, 100));
-    }
-    
     return new Promise((resolve, reject) => {
-        activeRequestResolve = resolve;
-        activeResponseStreamController = null;
-        responseBuffer = [];
+        // Create a dedicated DataChannel for this request
+        const dcLabel = "req-" + Math.random().toString(36).substr(2, 5);
+        const dc = peerConnection.createDataChannel(dcLabel);
         
-        try {
-            dataChannel.send(buffer);
-        } catch(e) {
-            activeRequestResolve = null;
-            reject(e);
-        }
+        let responseController = null;
+        let responseBuffer = [];
+        let headersParsed = false;
+
+        dc.onopen = async () => {
+            console.log(`[SW] Channel ${dcLabel} open. sending request...`);
+            
+            try {
+                // 1. Send Preamble
+                const serviceBytes = new TextEncoder().encode(serviceName);
+                const preamble = new Uint8Array(1 + serviceBytes.length);
+                preamble[0] = serviceBytes.length;
+                preamble.set(serviceBytes, 1);
+                dc.send(preamble);
+                
+                // 2. Send Request Line & Headers
+                const method = request.method;
+                const path = new URL(request.url).pathname + new URL(request.url).search;
+                const headers = [];
+                for (const [k, v] of request.headers) {
+                    headers.push(`${k}: ${v}`);
+                }
+                let reqStr = `${method} ${path} HTTP/1.1\r\n`;
+                reqStr += headers.join('\r\n') + '\r\n\r\n';
+                dc.send(new TextEncoder().encode(reqStr));
+                
+                // 3. Stream Body (Upload)
+                if (request.body) {
+                    const reader = request.body.getReader();
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        dc.send(value);
+                    }
+                }
+                
+                // Note: We don't close the channel here because we need to receive the response.
+                // The server will close it when it's done sending.
+                
+            } catch (e) {
+                console.error(`[SW] Failed to send request on ${dcLabel}:`, e);
+                dc.close();
+                reject(e);
+            }
+        };
+
+        dc.onmessage = (event) => {
+            const chunk = new Uint8Array(event.data);
+            
+            if (responseController) {
+                // Streaming body
+                responseController.enqueue(chunk);
+            } else {
+                // Buffering headers
+                responseBuffer.push(...chunk);
+                const endpoint = findDoubleCRLF(responseBuffer);
+                if (endpoint !== -1) {
+                    const headerBytes = new Uint8Array(responseBuffer.slice(0, endpoint));
+                    const bodyBytes = new Uint8Array(responseBuffer.slice(endpoint + 4));
+                    
+                    const headerStr = new TextDecoder().decode(headerBytes);
+                    const { status, headers } = parseHeaders(headerStr);
+                    
+                    const stream = new ReadableStream({
+                        start(controller) {
+                            responseController = controller;
+                            if (bodyBytes.length > 0) {
+                                controller.enqueue(bodyBytes);
+                            }
+                        },
+                        cancel() {
+                            dc.close();
+                        }
+                    });
+                    
+                    headersParsed = true;
+                    resolve(new Response(stream, { status, headers }));
+                    responseBuffer = []; // clear memory
+                }
+            }
+        };
+
+        dc.onclose = () => {
+            console.log(`[SW] Channel ${dcLabel} closed.`);
+            if (responseController) {
+                responseController.close();
+            } else if (!headersParsed) {
+                reject(new Error("Connection closed before response headers received"));
+            }
+        };
+        
+        dc.onerror = (e) => {
+            console.error(`[SW] Channel ${dcLabel} error:`, e);
+            if (responseController) {
+                responseController.error(e);
+            } else {
+                reject(e);
+            }
+        };
     });
+}
+
+function findDoubleCRLF(buffer) {
+    for (let i = 0; i < buffer.length - 3; i++) {
+        if (buffer[i]===13 && buffer[i+1]===10 && buffer[i+2]===13 && buffer[i+3]===10) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+function parseHeaders(headerStr) {
+    const lines = headerStr.split('\r\n');
+    const statusLine = lines[0];
+    const statusMatch = statusLine.match(/^HTTP\/1\.1 (\d+) (.+)$/);
+    const status = statusMatch ? parseInt(statusMatch[1]) : 200;
+    
+    const headers = new Headers();
+    for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line) continue;
+        const colon = line.indexOf(':');
+        if (colon > 0) {
+            headers.append(line.substring(0, colon).trim(), line.substring(colon + 1).trim());
+        }
+    }
+    return { status, headers };
 }

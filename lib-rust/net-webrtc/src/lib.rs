@@ -197,63 +197,107 @@ async fn handle_data_channel(d: Arc<RTCDataChannel>, _handlers: Vec<Arc<dyn Prot
     info!("New DataChannel {} {}", d_label, d_id);
 
     let d2 = d.clone();
-    d.on_message(Box::new(move |msg: DataChannelMessage| {
+    d.on_open(Box::new(move || {
         let d = d2.clone();
-        let d_label = d.label().to_owned();
+        let d_label = d_label.clone();
         Box::pin(async move {
-            let data = msg.data;
-            info!("Received {} bytes on DataChannel '{}'", data.len(), d_label);
+            info!("DataChannel '{}' open", d_label);
 
-            let service_name_len = if !data.is_empty() {
-                data[0] as usize
-            } else {
-                0
-            };
-            if data.len() > service_name_len + 1 {
-                let service_name = String::from_utf8_lossy(&data[1..1 + service_name_len]);
-                debug!("Service request for: {}", service_name);
+            match d.detach().await {
+                Ok(rtc_stream) => { 
+                    info!("DataChannel '{}' detached successfully", d_label);
+                    
+                    // 1. Read Preamble: [1 byte len]
+                    let mut len_buf = [0u8; 1];
+                    // Use inherent read method, loop until filled
+                    let mut read_so_far = 0;
+                    while read_so_far < 1 {
+                        match rtc_stream.read(&mut len_buf[read_so_far..]).await {
+                            Ok(0) => { error!("Unexpected EOF reading length"); return; }
+                            Ok(n) => read_so_far += n,
+                            Err(e) => { error!("Failed to read length: {}", e); return; }
+                        }
+                    }
+                    let service_name_len = len_buf[0] as usize;
 
-                let backend_addr = match service_name.as_ref() {
-                    "demo3001" => "127.0.0.1:3001",
-                    "demo3002" => "127.0.0.1:3002",
-                    _ => {
-                        warn!("Unknown service: {}", service_name);
-                        return;
-                    },
-                };
+                    // 2. Read Service Name
+                    let mut name_buf = vec![0u8; service_name_len];
+                    read_so_far = 0;
+                    while read_so_far < service_name_len {
+                        match rtc_stream.read(&mut name_buf[read_so_far..]).await {
+                            Ok(0) => { error!("Unexpected EOF reading service name"); return; }
+                            Ok(n) => read_so_far += n,
+                            Err(e) => { error!("Failed to read service name: {}", e); return; }
+                        }
+                    }
 
-                let payload = &data[1 + service_name_len..];
+                    let service_name = String::from_utf8_lossy(&name_buf);
+                    debug!("Service request for: {}", service_name);
 
-                match TcpStream::connect(backend_addr).await {
-                    Ok(mut stream) => {
-                        // Write payload to backend
-                        if let Err(e) = stream.write_all(payload).await {
-                            error!("Failed to write to backend: {}", e);
+                    let backend_addr = match service_name.as_ref() {
+                        "demo3001" => "127.0.0.1:3001",
+                        "demo3002" => "127.0.0.1:3002",
+                        _ => {
+                            warn!("Unknown service: {}", service_name);
                             return;
-                        }
+                        },
+                    };
 
-                        // Read response from backend and send back to DataChannel
-                        let mut buffer = vec![0; 4096];
-                        loop {
-                            match stream.read(&mut buffer).await {
-                                Ok(0) => break, // EOF
-                                Ok(n) => {
-                                    let chunk = bytes::Bytes::copy_from_slice(&buffer[..n]);
-                                    if let Err(e) = d.send(&chunk).await {
-                                        error!("Failed to send back to DataChannel: {}", e);
-                                        break;
+                    match TcpStream::connect(backend_addr).await {
+                        Ok(mut backend_stream) => {
+                            info!("Connected to backend {}, streaming data...", backend_addr);
+                            let mut buf_in = vec![0u8; 8192]; // RTC -> Backend
+                            let mut buf_out = vec![0u8; 8192]; // Backend -> RTC
+                            
+                            // Split TcpStream to satisfy borrow checker in select!
+                            let (mut backend_read, mut backend_write) = backend_stream.split();
+
+                            loop {
+                                tokio::select! {
+                                    // RTC -> Backend
+                                    res = rtc_stream.read(&mut buf_in) => {
+                                        match res {
+                                            Ok(0) => break, // EOF
+                                            Ok(n) => {
+                                                if let Err(e) = backend_write.write_all(&buf_in[..n]).await {
+                                                    error!("Backend write error: {}", e);
+                                                    break;
+                                                }
+                                            },
+                                            Err(e) => {
+                                                error!("RTC read error: {}", e);
+                                                break;
+                                            }
+                                        }
+                                    },
+                                    // Backend -> RTC
+                                    res = backend_read.read(&mut buf_out) => {
+                                        match res {
+                                            Ok(0) => break, // EOF
+                                            Ok(n) => {
+                                                let data = bytes::Bytes::copy_from_slice(&buf_out[..n]);
+                                                if let Err(e) = rtc_stream.write(&data).await {
+                                                    error!("RTC write error: {}", e);
+                                                    break;
+                                                }
+                                            },
+                                            Err(e) => {
+                                                error!("Backend read error: {}", e);
+                                                break;
+                                            }
+                                        }
                                     }
-                                },
-                                Err(e) => {
-                                    error!("Failed to read from backend: {}", e);
-                                    break;
-                                },
+                                }
                             }
+                            debug!("Streaming finished for {}", d_label);
+                        },
+                        Err(e) => {
+                            error!("Failed to connect to backend {}: {}", backend_addr, e);
                         }
-                    },
-                    Err(e) => {
-                        error!("Failed to connect to backend {}: {}", backend_addr, e);
-                    },
+                    }
+                },
+                Err(e) => {
+                    error!("Failed to detach DataChannel '{}': {}", d_label, e);
                 }
             }
         })
