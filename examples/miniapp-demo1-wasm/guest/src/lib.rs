@@ -1,11 +1,13 @@
 #[allow(warnings)]
 mod bindings;
 
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 mod handlers;
 
 use bindings::exports::wasm::service::handler::Guest;
 use bindings::wasm::service::types::*;
 
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 struct Component;
 
 impl Guest for Component {
