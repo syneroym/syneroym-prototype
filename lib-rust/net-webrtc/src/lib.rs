@@ -4,13 +4,11 @@ use futures::{SinkExt, StreamExt};
 use protocol_base::ProtocolHandler;
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
-use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tracing::{debug, error, info, warn};
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
 use webrtc::api::APIBuilder;
-use webrtc::data_channel::data_channel_message::DataChannelMessage;
 use webrtc::data_channel::RTCDataChannel;
 use webrtc::interceptor::registry::Registry;
 use webrtc::peer_connection::configuration::RTCConfiguration;
@@ -19,6 +17,9 @@ use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 // Use the external crate
 use signaling_server;
+
+mod stream;
+use stream::WebRTCStream;
 
 pub async fn init(config: &Config, handlers: Vec<Arc<dyn ProtocolHandler>>) -> Result<()> {
     if let Some(webrtc_config) = &config.comm_webrtc {
@@ -204,31 +205,25 @@ async fn handle_data_channel(d: Arc<RTCDataChannel>, _handlers: Vec<Arc<dyn Prot
             info!("DataChannel '{}' open", d_label);
 
             match d.detach().await {
-                Ok(rtc_stream) => { 
+                Ok(rtc_detached) => {
                     info!("DataChannel '{}' detached successfully", d_label);
-                    
+
+                    let mut rtc_stream = WebRTCStream::new(rtc_detached);
+
                     // 1. Read Preamble: [1 byte len]
-                    let mut len_buf = [0u8; 1];
-                    // Use inherent read method, loop until filled
-                    let mut read_so_far = 0;
-                    while read_so_far < 1 {
-                        match rtc_stream.read(&mut len_buf[read_so_far..]).await {
-                            Ok(0) => { error!("Unexpected EOF reading length"); return; }
-                            Ok(n) => read_so_far += n,
-                            Err(e) => { error!("Failed to read length: {}", e); return; }
+                    let service_name_len = match rtc_stream.read_u8().await {
+                        Ok(n) => n as usize,
+                        Err(e) => {
+                            error!("Failed to read length: {}", e);
+                            return;
                         }
-                    }
-                    let service_name_len = len_buf[0] as usize;
+                    };
 
                     // 2. Read Service Name
                     let mut name_buf = vec![0u8; service_name_len];
-                    read_so_far = 0;
-                    while read_so_far < service_name_len {
-                        match rtc_stream.read(&mut name_buf[read_so_far..]).await {
-                            Ok(0) => { error!("Unexpected EOF reading service name"); return; }
-                            Ok(n) => read_so_far += n,
-                            Err(e) => { error!("Failed to read service name: {}", e); return; }
-                        }
+                    if let Err(e) = rtc_stream.read_exact(&mut name_buf).await {
+                        error!("Failed to read service name: {}", e);
+                        return;
                     }
 
                     let service_name = String::from_utf8_lossy(&name_buf);
@@ -246,56 +241,29 @@ async fn handle_data_channel(d: Arc<RTCDataChannel>, _handlers: Vec<Arc<dyn Prot
                     match TcpStream::connect(backend_addr).await {
                         Ok(mut backend_stream) => {
                             info!("Connected to backend {}, streaming data...", backend_addr);
-                            let mut buf_in = vec![0u8; 8192]; // RTC -> Backend
-                            let mut buf_out = vec![0u8; 8192]; // Backend -> RTC
-                            
-                            // Split TcpStream to satisfy borrow checker in select!
-                            let (mut backend_read, mut backend_write) = backend_stream.split();
 
-                            loop {
-                                tokio::select! {
-                                    // RTC -> Backend
-                                    res = rtc_stream.read(&mut buf_in) => {
-                                        match res {
-                                            Ok(0) => break, // EOF
-                                            Ok(n) => {
-                                                if let Err(e) = backend_write.write_all(&buf_in[..n]).await {
-                                                    error!("Backend write error: {}", e);
-                                                    break;
-                                                }
-                                            },
-                                            Err(e) => {
-                                                error!("RTC read error: {}", e);
-                                                break;
-                                            }
-                                        }
-                                    },
-                                    // Backend -> RTC
-                                    res = backend_read.read(&mut buf_out) => {
-                                        match res {
-                                            Ok(0) => break, // EOF
-                                            Ok(n) => {
-                                                let data = bytes::Bytes::copy_from_slice(&buf_out[..n]);
-                                                if let Err(e) = rtc_stream.write(&data).await {
-                                                    error!("RTC write error: {}", e);
-                                                    break;
-                                                }
-                                            },
-                                            Err(e) => {
-                                                error!("Backend read error: {}", e);
-                                                break;
-                                            }
-                                        }
-                                    }
+                            match tokio::io::copy_bidirectional(
+                                &mut rtc_stream,
+                                &mut backend_stream,
+                            )
+                            .await
+                            {
+                                Ok((client_to_backend, backend_to_client)) => {
+                                    debug!(
+                                        "Streaming finished for {}: sent {}, received {}",
+                                        d_label, client_to_backend, backend_to_client
+                                    );
+                                }
+                                Err(e) => {
+                                    debug!("Streaming error/end for {}: {}", d_label, e);
                                 }
                             }
-                            debug!("Streaming finished for {}", d_label);
-                        },
+                        }
                         Err(e) => {
                             error!("Failed to connect to backend {}: {}", backend_addr, e);
                         }
                     }
-                },
+                }
                 Err(e) => {
                     error!("Failed to detach DataChannel '{}': {}", d_label, e);
                 }
