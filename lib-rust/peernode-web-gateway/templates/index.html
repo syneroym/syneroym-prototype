@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PeerNode Gateway</title>
+    <style>body { font-family: sans-serif; padding: 2rem; text-align: center; }</style>
+</head>
+<body>
+    <h1>PeerNode Gateway</h1>
+    <p>Bootstrapping Secure Connection...</p>
+    <div id="status">Initializing...</div>
+    <script>
+        async function init() {
+            const status = document.getElementById('status');
+            if (!('serviceWorker' in navigator)) {
+                status.innerText = "Service Workers not supported.";
+                return;
+            }
+
+            try {
+                // Register the Service Worker
+                const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+                console.log('[Page] SW Registered:', reg.scope);
+
+                if (navigator.serviceWorker.controller) {
+                    console.log('[Page] SW already controlling.');
+                    reloadContent();
+                } else {
+                    console.log('[Page] Waiting for SW control...');
+                    navigator.serviceWorker.addEventListener('controllerchange', () => {
+                        console.log('[Page] SW took control.');
+                        reloadContent();
+                    });
+                }
+            } catch (err) {
+                console.error('[Page] SW Registration Failed:', err);
+                status.innerText = "Initialization Failed.";
+            }
+        }
+
+        async function reloadContent() {
+            console.log('[Page] Fetching actual content...');
+            try {
+                const response = await fetch(window.location.href, {
+                    headers: { 'X-Peer-Proxy': 'true' }
+                });
+                
+                if (!response.body) {
+                    throw new Error("Response body is null");
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+
+                document.open();
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    // Stream decode: handles multi-byte characters split across chunks
+                    const text = decoder.decode(value, { stream: true });
+                    document.write(text);
+                }
+                
+                document.close();
+            } catch (err) {
+                console.error('[Page] Content Load Failed:', err);
+                document.open();
+                document.write("<h1>Connection Failed</h1><p>Failed to load content from peer.</p>");
+                document.close();
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

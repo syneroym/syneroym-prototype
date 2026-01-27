@@ -1,0 +1,14 @@
+[package]
+name = "syneroym-peernode-web-gateway"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+anyhow.workspace = true
+axum = { version = "0.7", features = ["ws"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs", "trace", "cors"] }
+askama = "0.12"
+askama_axum = "0.4"
