@@ -13,6 +13,12 @@ pub struct StreamManager {
     stream_metadata: Mutex<HashMap<String, StreamInfo>>,
 }
 
+impl Default for StreamManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StreamManager {
     pub fn new() -> Self {
         StreamManager {

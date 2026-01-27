@@ -1,18 +1,21 @@
+use askama::Template;
 use axum::{
-    extract::{Host, State, ws::{WebSocketUpgrade, WebSocket, Message}},
-    response::{Response, IntoResponse},
-    http::{HeaderMap, StatusCode, header},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        Host, State,
+    },
+    http::{header, HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
     routing::get,
     Router,
 };
-use askama::Template;
-use std::net::SocketAddr;
-use tracing::{info, debug, error};
-use iroh::{Endpoint, EndpointAddr};
 use common::stream::IrohStream;
+use futures::{SinkExt, StreamExt};
+use iroh::{Endpoint, EndpointAddr};
 use protocol_base::SYNEROYM_ALPN;
-use tokio::io::{AsyncWriteExt, AsyncReadExt};
-use futures::{StreamExt, SinkExt};
+use std::net::SocketAddr;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tracing::{debug, error, info};
 
 type NodeId = EndpointAddr;
 
@@ -23,8 +26,11 @@ struct AppState {
 }
 
 pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
-    info!("Starting LocalNode Web Gateway on port {}, target: {:?}", port, target);
-    
+    info!(
+        "Starting LocalNode Web Gateway on port {}, target: {:?}",
+        port, target
+    );
+
     let endpoint = Endpoint::bind().await?;
 
     let state = AppState {
@@ -62,16 +68,17 @@ async fn index_handler(
     State(state): State<AppState>,
     ws: Option<WebSocketUpgrade>,
     Host(host): Host,
-    headers: HeaderMap
+    headers: HeaderMap,
 ) -> Response {
     debug!("Received index request for host: {}", host);
 
     // Loop Protection
     if headers.contains_key("X-Peer-Proxy") {
-         return (
+        return (
             StatusCode::BAD_GATEWAY,
             "Error: Request reached gateway server. Service Worker failed to intercept.",
-        ).into_response();
+        )
+            .into_response();
     }
 
     if let Some(ws) = ws {
@@ -82,16 +89,14 @@ async fn index_handler(
     let template = IndexTemplate;
 
     match template.render() {
-        Ok(content) => {
-            Response::builder()
-                .header(header::CONTENT_TYPE, "text/html")
-                .body(content.into())
-                .unwrap()
-        },
+        Ok(content) => Response::builder()
+            .header(header::CONTENT_TYPE, "text/html")
+            .body(content.into())
+            .unwrap(),
         Err(e) => {
             tracing::error!("Index template rendering failed: {}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
-        }
+        },
     }
 }
 
@@ -105,17 +110,15 @@ async fn sw_handler() -> Response {
     };
 
     match template.render() {
-        Ok(content) => {
-            Response::builder()
-                .header(header::CONTENT_TYPE, "application/javascript")
-                .header("Service-Worker-Allowed", "/") 
-                .body(content.into())
-                .unwrap()
-        },
+        Ok(content) => Response::builder()
+            .header(header::CONTENT_TYPE, "application/javascript")
+            .header("Service-Worker-Allowed", "/")
+            .body(content.into())
+            .unwrap(),
         Err(e) => {
             tracing::error!("SW template rendering failed: {}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
-        }
+        },
     }
 }
 
@@ -125,74 +128,82 @@ async fn handle_socket(socket: WebSocket, state: AppState, host: String) {
         Err(e) => {
             error!("Failed to extract service name: {}", e);
             return;
-        }
+        },
     };
-    
+
     debug!("Connecting to Iroh target for service: {}", svc_name);
 
     match state.iroh.connect(state.target, SYNEROYM_ALPN).await {
         Ok(connection) => {
             match connection.open_bi().await {
                 Ok((send, recv)) => {
-                     let svc_raw = svc_name.as_bytes();
-                     let mut iroh_stream = IrohStream::new(send, recv);
-                     
-                     // Handshake
-                     if let Err(e) = iroh_stream.write_u8(svc_raw.len() as u8).await {
-                         error!("Failed to write service len: {}", e);
-                         return;
-                     }
-                     if let Err(e) = iroh_stream.write_all(svc_raw).await {
-                         error!("Failed to write service name: {}", e);
-                         return;
-                     }
+                    let svc_raw = svc_name.as_bytes();
+                    let mut iroh_stream = IrohStream::new(send, recv);
 
-                     // Proxy loop
-                     let (mut sender, mut receiver) = socket.split();
-                     let (mut iroh_reader, mut iroh_writer) = tokio::io::split(iroh_stream);
+                    // Handshake
+                    if let Err(e) = iroh_stream.write_u8(svc_raw.len() as u8).await {
+                        error!("Failed to write service len: {}", e);
+                        return;
+                    }
+                    if let Err(e) = iroh_stream.write_all(svc_raw).await {
+                        error!("Failed to write service name: {}", e);
+                        return;
+                    }
 
-                     let iroh_to_ws = async {
-                         let mut buf = [0u8; 4096];
-                         loop {
-                             match iroh_reader.read(&mut buf).await {
-                                 Ok(0) => break, // EOF
-                                 Ok(n) => {
-                                     if sender.send(Message::Binary(buf[..n].to_vec())).await.is_err() {
-                                         break;
-                                     }
-                                 }
-                                 Err(e) => {
-                                     error!("Error reading from Iroh: {}", e);
-                                     break;
-                                 }
-                             }
-                         }
-                     };
+                    // Proxy loop
+                    let (mut sender, mut receiver) = socket.split();
+                    let (mut iroh_reader, mut iroh_writer) = tokio::io::split(iroh_stream);
 
-                     let ws_to_iroh = async {
-                         while let Some(msg) = receiver.next().await {
-                             match msg {
-                                 Ok(Message::Binary(data)) => {
-                                     if iroh_writer.write_all(&data).await.is_err() { break; }
-                                 }
-                                 Ok(Message::Text(text)) => {
-                                     if iroh_writer.write_all(text.as_bytes()).await.is_err() { break; }
-                                 }
-                                 Ok(Message::Close(_)) => break,
-                                 _ => {} // Ping/Pong
-                             }
-                         }
-                     };
+                    let iroh_to_ws = async {
+                        let mut buf = [0u8; 4096];
+                        loop {
+                            match iroh_reader.read(&mut buf).await {
+                                Ok(0) => break, // EOF
+                                Ok(n) => {
+                                    if sender
+                                        .send(Message::Binary(buf[..n].to_vec()))
+                                        .await
+                                        .is_err()
+                                    {
+                                        break;
+                                    }
+                                },
+                                Err(e) => {
+                                    error!("Error reading from Iroh: {}", e);
+                                    break;
+                                },
+                            }
+                        }
+                    };
 
-                     tokio::select! {
-                         _ = iroh_to_ws => {},
-                         _ = ws_to_iroh => {},
-                     }
-                     debug!("Proxy connection closed for {}", svc_name);
-                }
+                    let ws_to_iroh = async {
+                        while let Some(msg) = receiver.next().await {
+                            match msg {
+                                Ok(Message::Binary(data)) => {
+                                    if iroh_writer.write_all(&data).await.is_err() {
+                                        break;
+                                    }
+                                },
+                                Ok(Message::Text(text)) => {
+                                    if iroh_writer.write_all(text.as_bytes()).await.is_err() {
+                                        break;
+                                    }
+                                },
+                                Ok(Message::Close(_)) => break,
+                                _ => {}, // Ping/Pong
+                            }
+                        }
+                    };
+
+                    tokio::select! {
+                        _ = iroh_to_ws => {},
+                        _ = ws_to_iroh => {},
+                    }
+                    debug!("Proxy connection closed for {}", svc_name);
+                },
                 Err(e) => error!("Failed to open bi stream: {}", e),
             }
-        }
+        },
         Err(e) => error!("Failed to connect to iroh target: {}", e),
     }
 }

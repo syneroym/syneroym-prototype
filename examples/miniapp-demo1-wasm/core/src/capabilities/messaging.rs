@@ -10,6 +10,12 @@ pub struct MessageStreamManager {
     stream_types: Mutex<HashMap<String, HashSet<String>>>,
 }
 
+impl Default for MessageStreamManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MessageStreamManager {
     pub fn new() -> Self {
         MessageStreamManager {
@@ -28,10 +34,7 @@ impl MessageStreamManager {
         streams.insert(stream_id.clone(), sender);
 
         let mut types = self.stream_types.lock().unwrap();
-        types
-            .entry(stream_type)
-            .or_insert_with(HashSet::new)
-            .insert(stream_id);
+        types.entry(stream_type).or_default().insert(stream_id);
     }
 
     pub fn send(&self, stream_id: &str, payload: Vec<u8>) -> Result<()> {

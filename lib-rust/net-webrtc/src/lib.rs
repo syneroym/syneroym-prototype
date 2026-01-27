@@ -16,7 +16,6 @@ use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 // Use the external crate
-use signaling_server;
 
 mod stream;
 use stream::WebRTCStream;
@@ -216,7 +215,7 @@ async fn handle_data_channel(d: Arc<RTCDataChannel>, _handlers: Vec<Arc<dyn Prot
                         Err(e) => {
                             error!("Failed to read length: {}", e);
                             return;
-                        }
+                        },
                     };
 
                     // 2. Read Service Name
@@ -253,20 +252,20 @@ async fn handle_data_channel(d: Arc<RTCDataChannel>, _handlers: Vec<Arc<dyn Prot
                                         "Streaming finished for {}: sent {}, received {}",
                                         d_label, client_to_backend, backend_to_client
                                     );
-                                }
+                                },
                                 Err(e) => {
                                     debug!("Streaming error/end for {}: {}", d_label, e);
-                                }
+                                },
                             }
-                        }
+                        },
                         Err(e) => {
                             error!("Failed to connect to backend {}: {}", backend_addr, e);
-                        }
+                        },
                     }
-                }
+                },
                 Err(e) => {
                     error!("Failed to detach DataChannel '{}': {}", d_label, e);
-                }
+                },
             }
         })
     }));

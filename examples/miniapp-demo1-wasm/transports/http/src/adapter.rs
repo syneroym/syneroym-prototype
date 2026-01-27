@@ -13,7 +13,6 @@ use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing;
 use wasm_service_core::*;
 
 pub struct HttpTransport {

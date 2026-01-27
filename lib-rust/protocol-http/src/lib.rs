@@ -13,6 +13,12 @@ impl HttpHandler {
     }
 }
 
+impl Default for HttpHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl ProtocolHandler for HttpHandler {
     fn protocol_id(&self) -> String {

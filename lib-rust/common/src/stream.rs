@@ -35,7 +35,7 @@ impl AsyncWrite for IrohStream {
     ) -> Poll<Result<usize, std::io::Error>> {
         Pin::new(&mut self.send)
             .poll_write(cx, buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+            .map_err(std::io::Error::other)
     }
 
     fn poll_flush(
@@ -44,7 +44,7 @@ impl AsyncWrite for IrohStream {
     ) -> Poll<Result<(), std::io::Error>> {
         Pin::new(&mut self.send)
             .poll_flush(cx)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+            .map_err(std::io::Error::other)
     }
 
     fn poll_shutdown(
@@ -56,6 +56,6 @@ impl AsyncWrite for IrohStream {
         };
         Pin::new(&mut self.send)
             .poll_shutdown(cx)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+            .map_err(std::io::Error::other)
     }
 }

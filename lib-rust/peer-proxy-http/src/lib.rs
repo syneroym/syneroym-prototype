@@ -109,28 +109,26 @@ fn extract_sni(buf: &[u8]) -> Result<String> {
 
     // Look for ClientHello message
     for msg in tls_record.msg {
-        if let TlsMessage::Handshake(handshake) = msg {
-            if let TlsMessageHandshake::ClientHello(client_hello) = handshake {
-                // Parse extensions from raw bytes
-                if let Some(ext_bytes) = client_hello.ext {
-                    // Use parse_tls_extensions to parse the extension bytes
-                    match tls_parser::parse_tls_extensions(ext_bytes) {
-                        Ok((_, extensions)) => {
-                            for ext in extensions {
-                                if let tls_parser::TlsExtension::SNI(sni_list) = ext {
-                                    if !sni_list.is_empty() {
-                                        // SNI entry is (type, hostname_bytes)
-                                        let hostname = std::str::from_utf8(sni_list[0].1)
-                                            .map_err(|e| anyhow!("Invalid SNI hostname: {}", e))?;
-                                        return Ok(hostname.to_string());
-                                    }
+        if let TlsMessage::Handshake(TlsMessageHandshake::ClientHello(client_hello)) = msg {
+            // Parse extensions from raw bytes
+            if let Some(ext_bytes) = client_hello.ext {
+                // Use parse_tls_extensions to parse the extension bytes
+                match tls_parser::parse_tls_extensions(ext_bytes) {
+                    Ok((_, extensions)) => {
+                        for ext in extensions {
+                            if let tls_parser::TlsExtension::SNI(sni_list) = ext {
+                                if !sni_list.is_empty() {
+                                    // SNI entry is (type, hostname_bytes)
+                                    let hostname = std::str::from_utf8(sni_list[0].1)
+                                        .map_err(|e| anyhow!("Invalid SNI hostname: {}", e))?;
+                                    return Ok(hostname.to_string());
                                 }
                             }
-                        },
-                        Err(e) => {
-                            error!("Failed to parse TLS extensions: {:?}", e);
-                        },
-                    }
+                        }
+                    },
+                    Err(e) => {
+                        error!("Failed to parse TLS extensions: {:?}", e);
+                    },
                 }
             }
         }

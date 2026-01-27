@@ -55,14 +55,10 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     let (tx, mut rx) = broadcast::channel(100);
 
     // Perform a simple handshake: wait for {"type": "register", "id": "my-id"}
-    let peer_id = if let Some(Ok(msg)) = receiver.next().await {
-        if let Message::Text(text) = msg {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
-                if v["type"] == "register" {
-                    v["id"].as_str().map(|s| s.to_string())
-                } else {
-                    None
-                }
+    let peer_id = if let Some(Ok(Message::Text(text))) = receiver.next().await {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+            if v["type"] == "register" {
+                v["id"].as_str().map(|s| s.to_string())
             } else {
                 None
             }

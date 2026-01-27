@@ -27,7 +27,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Default)]
 pub struct IrohCommConfig {
     /// Path to the secret key file for the Iroh node identity.
     /// If not provided, a temporary identity may be generated or a default location used.
@@ -38,26 +38,8 @@ pub struct IrohCommConfig {
     pub rpc_port: Option<u16>,
 }
 
-impl Default for IrohCommConfig {
-    fn default() -> Self {
-        Self {
-            secret_key_path: None,
-            relay_url: None,
-            rpc_port: None,
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Default)]
 pub struct WebRtcCommConfig {
     /// URL of the signaling server
     pub signaling_server_url: Option<String>,
-}
-
-impl Default for WebRtcCommConfig {
-    fn default() -> Self {
-        Self {
-            signaling_server_url: None,
-        }
-    }
 }

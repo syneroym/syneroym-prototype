@@ -16,7 +16,7 @@ pub struct Comment {
 pub fn handle_list_comments(_req: Request) -> Response {
     match database::execute(
         "SELECT id, text FROM comments ORDER BY id DESC LIMIT 5",
-        &vec![],
+        &[],
     ) {
         Ok(result) => {
             let comments: Vec<Comment> = result
