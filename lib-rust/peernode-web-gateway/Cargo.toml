@@ -12,3 +12,8 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["fs", "trace", "cors"] }
 askama = "0.12"
 askama_axum = "0.4"
+iroh = "0.95"
+protocol-base = { package = "syneroym-protocol-base", path = "../protocol-base" }
+common = { package = "syneroym-common", path = "../common" }
+bytes = "1"
+futures = "0.3"
