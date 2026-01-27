@@ -1,5 +1,5 @@
 [package]
-name = "syneroym-peernode-web-gateway"
+name = "syneroym-peer-web-gateway"
 version = "0.1.0"
 edition = "2021"
 

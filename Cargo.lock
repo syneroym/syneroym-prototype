@@ -7299,7 +7299,7 @@ dependencies = [
  "predicates",
  "serde",
  "syneroym-common",
- "syneroym-peernode",
+ "syneroym-peer",
  "tokio",
  "tracing-subscriber",
 ]
@@ -7364,7 +7364,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "syneroym-peernode"
+name = "syneroym-peer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -7374,7 +7374,7 @@ dependencies = [
  "syneroym-net",
  "syneroym-net-iroh",
  "syneroym-net-webrtc",
- "syneroym-peerproxy-http",
+ "syneroym-peer-proxy-http",
  "syneroym-protocol-base",
  "syneroym-protocol-http",
  "syneroym-store-interface",
@@ -7384,7 +7384,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "syneroym-peernode-web-gateway"
+name = "syneroym-peer-proxy-http"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "futures",
+ "http-body-util",
+ "iroh",
+ "syneroym-common",
+ "syneroym-protocol-base",
+ "tls-parser",
+ "tokio",
+ "tokio-util",
+ "tower-http 0.5.2",
+ "tracing",
+]
+
+[[package]]
+name = "syneroym-peer-web-gateway"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -7399,24 +7417,6 @@ dependencies = [
  "tokio",
  "tower 0.5.3",
  "tower-http 0.6.8",
- "tracing",
-]
-
-[[package]]
-name = "syneroym-peerproxy-http"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytes",
- "futures",
- "http-body-util",
- "iroh",
- "syneroym-common",
- "syneroym-protocol-base",
- "tls-parser",
- "tokio",
- "tokio-util",
- "tower-http 0.5.2",
  "tracing",
 ]
 

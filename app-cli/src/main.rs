@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         args::CliCommand::RunPeer(_) => {
-            let peer = peernode::PeerNode::new(conf).await?;
+            let peer = peer::PeerNode::new(conf).await?;
             peer.bootstrap().await?;
         },
         args::CliCommand::Version => {
