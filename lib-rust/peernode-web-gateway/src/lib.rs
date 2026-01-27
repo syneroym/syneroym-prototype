@@ -34,6 +34,7 @@ struct IndexTemplate;
 struct SwTemplate<'a> {
     signaling_server_url: &'a str,
     target_peer_id: &'a str,
+    http_version: &'a str,
 }
 
 async fn index_handler(Host(host): Host, headers: HeaderMap) -> Response {
@@ -69,6 +70,7 @@ async fn sw_handler() -> Response {
     let template = SwTemplate {
         signaling_server_url: "ws://localhost:8000/ws",
         target_peer_id: "host-node",
+        http_version: "HTTP/1.1",
     };
 
     match template.render() {

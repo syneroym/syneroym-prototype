@@ -1,6 +1,7 @@
 // Service Worker Logic
-const SIGNALING_SERVER_URL = "{{ signaling_server_url }}"; 
+const SIGNALING_SERVER_URL = "{{ signaling_server_url }}";
 const TARGET_PEER_ID = "{{ target_peer_id }}";
+const HTTP_VERSION = "{{ http_version }}";
 const MY_ID = "gateway-" + Math.random().toString(36).substr(2, 9);
 
 let peerConnection;
@@ -46,7 +47,9 @@ async function startWebRTC(resolve, reject) {
 
     peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-            // Trickle ICE not implemented in simple demo
+            // TODO: We use Vanilla ICE (wait for all candidates), so we don't send them individually.
+            // They will be included in the final SDP.
+            // Can implement Trickle ICE later if needed.
         }
     };
 
@@ -61,6 +64,20 @@ async function startWebRTC(resolve, reject) {
     // Create Offer
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
+
+    // Wait for ICE Gathering to complete (Vanilla ICE)
+    // This ensures all candidates are included in the SDP
+    if (peerConnection.iceGatheringState !== 'complete') {
+        await new Promise(resolve => {
+            const checkState = () => {
+                if (peerConnection.iceGatheringState === 'complete') {
+                    peerConnection.removeEventListener('icegatheringstatechange', checkState);
+                    resolve();
+                }
+            };
+            peerConnection.addEventListener('icegatheringstatechange', checkState);
+        });
+    }
 
     console.log("[SW] Sending Offer to:", TARGET_PEER_ID);
     ws.send(JSON.stringify({
@@ -118,7 +135,7 @@ self.addEventListener('fetch', (event) => {
                 let serviceName = parts.length > 0 ? parts[0] : "default";
 
                 console.log(`[SW] Proxying ${event.request.method} ${url.pathname} to ${serviceName}`);
-                
+
                 return await sendRequest(serviceName, event.request);
 
             } catch (err) {
@@ -137,14 +154,14 @@ async function sendRequest(serviceName, request) {
         // Create a dedicated DataChannel for this request
         const dcLabel = "req-" + Math.random().toString(36).substr(2, 5);
         const dc = peerConnection.createDataChannel(dcLabel);
-        
+
         let responseController = null;
         let responseBuffer = [];
         let headersParsed = false;
 
         dc.onopen = async () => {
             console.log(`[SW] Channel ${dcLabel} open. sending request...`);
-            
+
             try {
                 // 1. Send Preamble
                 const serviceBytes = new TextEncoder().encode(serviceName);
@@ -152,7 +169,7 @@ async function sendRequest(serviceName, request) {
                 preamble[0] = serviceBytes.length;
                 preamble.set(serviceBytes, 1);
                 dc.send(preamble);
-                
+
                 // 2. Send Request Line & Headers
                 const method = request.method;
                 const path = new URL(request.url).pathname + new URL(request.url).search;
@@ -160,10 +177,10 @@ async function sendRequest(serviceName, request) {
                 for (const [k, v] of request.headers) {
                     headers.push(`${k}: ${v}`);
                 }
-                let reqStr = `${method} ${path} HTTP/1.1\r\n`;
+                let reqStr = `${method} ${path} ${HTTP_VERSION}\r\n`;
                 reqStr += headers.join('\r\n') + '\r\n\r\n';
                 dc.send(new TextEncoder().encode(reqStr));
-                
+
                 // 3. Stream Body (Upload)
                 if (request.body) {
                     const reader = request.body.getReader();
@@ -173,10 +190,10 @@ async function sendRequest(serviceName, request) {
                         dc.send(value);
                     }
                 }
-                
+
                 // Note: We don't close the channel here because we need to receive the response.
                 // The server will close it when it's done sending.
-                
+
             } catch (e) {
                 console.error(`[SW] Failed to send request on ${dcLabel}:`, e);
                 dc.close();
@@ -186,7 +203,7 @@ async function sendRequest(serviceName, request) {
 
         dc.onmessage = (event) => {
             const chunk = new Uint8Array(event.data);
-            
+
             if (responseController) {
                 // Streaming body
                 responseController.enqueue(chunk);
@@ -197,10 +214,10 @@ async function sendRequest(serviceName, request) {
                 if (endpoint !== -1) {
                     const headerBytes = new Uint8Array(responseBuffer.slice(0, endpoint));
                     const bodyBytes = new Uint8Array(responseBuffer.slice(endpoint + 4));
-                    
+
                     const headerStr = new TextDecoder().decode(headerBytes);
                     const { status, headers } = parseHeaders(headerStr);
-                    
+
                     const stream = new ReadableStream({
                         start(controller) {
                             responseController = controller;
@@ -212,7 +229,7 @@ async function sendRequest(serviceName, request) {
                             dc.close();
                         }
                     });
-                    
+
                     headersParsed = true;
                     resolve(new Response(stream, { status, headers }));
                     responseBuffer = []; // clear memory
@@ -228,7 +245,7 @@ async function sendRequest(serviceName, request) {
                 reject(new Error("Connection closed before response headers received"));
             }
         };
-        
+
         dc.onerror = (e) => {
             console.error(`[SW] Channel ${dcLabel} error:`, e);
             if (responseController) {
@@ -242,7 +259,7 @@ async function sendRequest(serviceName, request) {
 
 function findDoubleCRLF(buffer) {
     for (let i = 0; i < buffer.length - 3; i++) {
-        if (buffer[i]===13 && buffer[i+1]===10 && buffer[i+2]===13 && buffer[i+3]===10) {
+        if (buffer[i] === 13 && buffer[i + 1] === 10 && buffer[i + 2] === 13 && buffer[i + 3] === 10) {
             return i;
         }
     }
@@ -252,9 +269,9 @@ function findDoubleCRLF(buffer) {
 function parseHeaders(headerStr) {
     const lines = headerStr.split('\r\n');
     const statusLine = lines[0];
-    const statusMatch = statusLine.match(/^HTTP\/1\.1 (\d+) (.+)$/);
+    const statusMatch = statusLine.match(/^HTTP\/[0-9.]+\s+(\d+)\s+(.+)$/);
     const status = statusMatch ? parseInt(statusMatch[1]) : 200;
-    
+
     const headers = new Headers();
     for (let i = 1; i < lines.length; i++) {
         const line = lines[i];
