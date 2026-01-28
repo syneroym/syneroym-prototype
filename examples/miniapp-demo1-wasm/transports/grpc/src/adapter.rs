@@ -103,13 +103,13 @@ impl WasmService for GrpcTransport {
 
         match self.runtime.handle_request(canonical_req).await {
             Ok(canonical_resp) => {
-                if canonical_resp.code != 0 {
-                    if let Some(error) = &canonical_resp.error {
-                        return Err(Status::new(
-                            Self::code_to_grpc_status(canonical_resp.code),
-                            error.message.clone(),
-                        ));
-                    }
+                if canonical_resp.code != 0
+                    && let Some(error) = &canonical_resp.error
+                {
+                    return Err(Status::new(
+                        Self::code_to_grpc_status(canonical_resp.code),
+                        error.message.clone(),
+                    ));
                 }
 
                 let proto_resp = self.canonical_to_proto(canonical_resp);

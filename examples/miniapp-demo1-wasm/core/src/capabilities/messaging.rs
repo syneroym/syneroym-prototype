@@ -55,10 +55,10 @@ impl MessageStreamManager {
             let streams = self.streams.lock().unwrap();
             let mut count = 0;
             for stream_id in stream_ids {
-                if let Some(sender) = streams.get(stream_id) {
-                    if sender.try_send(payload.clone()).is_ok() {
-                        count += 1;
-                    }
+                if let Some(sender) = streams.get(stream_id)
+                    && sender.try_send(payload.clone()).is_ok()
+                {
+                    count += 1;
                 }
             }
             Ok(count)

@@ -32,10 +32,10 @@ impl FileOperations {
                 let name = entry.file_name().to_string_lossy().to_string();
 
                 // Filter by prefix if provided
-                if let Some(ref p) = prefix {
-                    if !name.starts_with(p) {
-                        continue;
-                    }
+                if let Some(ref p) = prefix
+                    && !name.starts_with(p)
+                {
+                    continue;
                 }
 
                 // Skip database files

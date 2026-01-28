@@ -26,14 +26,14 @@ impl LocalNode {
         info!("Bootstrapping Syneroym LocalNode...");
 
         // Start Signaling Server
-        if let Some(sig_conf) = &self.config.signaling_server {
-            if sig_conf.enabled {
-                let port = sig_conf.port;
-                info!("Starting Signaling Server on port {}", port);
-                tokio::spawn(async move {
-                    signaling_server::start_server(port).await;
-                });
-            }
+        if let Some(sig_conf) = &self.config.signaling_server
+            && sig_conf.enabled
+        {
+            let port = sig_conf.port;
+            info!("Starting Signaling Server on port {}", port);
+            tokio::spawn(async move {
+                signaling_server::start_server(port).await;
+            });
         }
 
         // 1. Read Services Configuration
@@ -66,14 +66,12 @@ impl LocalNode {
             let gateway_conf = self.config.peer_gateway.clone();
             let node_addr_gateway = node_addr.clone();
             let gateway_fut = async move {
-                if let Some(gw_conf) = gateway_conf {
-                    if gw_conf.enabled {
-                        info!("Starting Peer Web Gateway on port {}", gw_conf.port);
-                        if let Err(e) =
-                            peer_web_gateway::start(gw_conf.port, node_addr_gateway).await
-                        {
-                            error!("Peer Web Gateway failed: {}", e);
-                        }
+                if let Some(gw_conf) = gateway_conf
+                    && gw_conf.enabled
+                {
+                    info!("Starting Peer Web Gateway on port {}", gw_conf.port);
+                    if let Err(e) = peer_web_gateway::start(gw_conf.port, node_addr_gateway).await {
+                        error!("Peer Web Gateway failed: {}", e);
                     }
                 }
             };

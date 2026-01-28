@@ -116,13 +116,13 @@ fn extract_sni(buf: &[u8]) -> Result<String> {
                 match tls_parser::parse_tls_extensions(ext_bytes) {
                     Ok((_, extensions)) => {
                         for ext in extensions {
-                            if let tls_parser::TlsExtension::SNI(sni_list) = ext {
-                                if !sni_list.is_empty() {
-                                    // SNI entry is (type, hostname_bytes)
-                                    let hostname = std::str::from_utf8(sni_list[0].1)
-                                        .map_err(|e| anyhow!("Invalid SNI hostname: {}", e))?;
-                                    return Ok(hostname.to_string());
-                                }
+                            if let tls_parser::TlsExtension::SNI(sni_list) = ext
+                                && !sni_list.is_empty()
+                            {
+                                // SNI entry is (type, hostname_bytes)
+                                let hostname = std::str::from_utf8(sni_list[0].1)
+                                    .map_err(|e| anyhow!("Invalid SNI hostname: {}", e))?;
+                                return Ok(hostname.to_string());
                             }
                         }
                     }

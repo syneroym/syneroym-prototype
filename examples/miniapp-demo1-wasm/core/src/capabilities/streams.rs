@@ -90,11 +90,11 @@ impl StreamManager {
         };
 
         // Put stream back if not EOF
-        if let Ok(chunk) = &result {
-            if !chunk.eof {
-                let mut streams = self.input_streams.lock().unwrap();
-                streams.insert(stream_id.to_string(), stream);
-            }
+        if let Ok(chunk) = &result
+            && !chunk.eof
+        {
+            let mut streams = self.input_streams.lock().unwrap();
+            streams.insert(stream_id.to_string(), stream);
         }
 
         result
