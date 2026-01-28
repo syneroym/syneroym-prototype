@@ -1,20 +1,51 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LocalNode Gateway</title>
     <style>
-        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; }
-        .status { padding: 1rem; border-radius: 4px; margin-bottom: 1rem; }
-        .success { background: #d4edda; color: #155724; }
-        .error { background: #f8d7da; color: #721c24; }
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .status {
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+        }
     </style>
 </head>
+
 <body>
     <h1>LocalNode Gateway</h1>
     <div id="status"></div>
+    <div id="peer-content"></div>
     <script>
+        const SIGNALING_SERVER_URL = "{{ signaling_server_url }}";
+        const TARGET_PEER_ID = "{{ target_peer_id }}";
+        const HTTP_VERSION = "{{ http_version }}";
+        const MY_ID = "gateway-" + Math.random().toString(36).substr(2, 9);
+
+        let peerConnection;
+        let ws;
+        let isConnected = false;
+        let connectionPromise = null;
+
         async function init() {
             const status = document.getElementById('status');
             if (!('serviceWorker' in navigator)) {
@@ -22,19 +53,32 @@
                 return;
             }
 
+            // Listen for requests from the Service Worker
+            navigator.serviceWorker.addEventListener('message', (event) => {
+                if (event.data.type === 'FETCH_REQUEST') {
+                    handleSWRequest(event.data, event.ports[0]);
+                }
+            });
+            navigator.serviceWorker.startMessages();
+
             try {
                 // Register the Service Worker
                 const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
                 console.log('[Page] SW Registered:', reg.scope);
 
+                // Start WebRTC Connection
+                bootstrap().catch(err => {
+                    console.error("WebRTC Bootstrap failed:", err);
+                    status.innerText = "Connection Failed: " + err.message;
+                    status.className = "status error";
+                });
+
                 if (navigator.serviceWorker.controller) {
                     console.log('[Page] SW already controlling.');
-                    reloadContent();
                 } else {
                     console.log('[Page] Waiting for SW control...');
                     navigator.serviceWorker.addEventListener('controllerchange', () => {
                         console.log('[Page] SW took control.');
-                        reloadContent();
                     });
                 }
             } catch (err) {
@@ -43,40 +87,266 @@
             }
         }
 
+        async function bootstrap() {
+            if (isConnected) return;
+            if (connectionPromise) return connectionPromise;
+
+            connectionPromise = new Promise((resolve, reject) => {
+                console.log("[Page] Connecting to Signaling Server:", SIGNALING_SERVER_URL);
+                ws = new WebSocket(SIGNALING_SERVER_URL);
+
+                ws.onopen = () => {
+                    console.log("[Page] WS Open. Registering as:", MY_ID);
+                    ws.send(JSON.stringify({ type: "register", id: MY_ID }));
+                    startWebRTC(resolve, reject);
+                };
+
+                ws.onmessage = async (event) => {
+                    const msg = JSON.parse(event.data);
+                    handleSignalingMessage(msg);
+                };
+
+                ws.onerror = (e) => {
+                    console.error("[Page] WS Error:", e);
+                    reject(e);
+                };
+            });
+
+            return connectionPromise;
+        }
+
+        async function startWebRTC(resolve, reject) {
+            console.log("[Page] Starting WebRTC...");
+            const config = {
+                iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+            };
+
+            peerConnection = new RTCPeerConnection(config);
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    // Vanilla ICE
+                }
+            };
+
+            peerConnection.onconnectionstatechange = () => {
+                console.log("[Page] Connection State:", peerConnection.connectionState);
+                if (peerConnection.connectionState === 'connected') {
+                    isConnected = true;
+                    document.getElementById('status').innerText = "Connected to Peer";
+                    document.getElementById('status').className = "status success";
+                    resolve();
+                }
+            };
+
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+
+            if (peerConnection.iceGatheringState !== 'complete') {
+                await new Promise(resolve => {
+                    const checkState = () => {
+                        if (peerConnection.iceGatheringState === 'complete') {
+                            peerConnection.removeEventListener('icegatheringstatechange', checkState);
+                            resolve();
+                        }
+                    };
+                    peerConnection.addEventListener('icegatheringstatechange', checkState);
+                });
+            }
+
+            console.log("[Page] Sending Offer to:", TARGET_PEER_ID);
+            ws.send(JSON.stringify({
+                type: "offer",
+                target: TARGET_PEER_ID,
+                sender: MY_ID,
+                sdp: peerConnection.localDescription.sdp
+            }));
+        }
+
+        async function handleSignalingMessage(msg) {
+            switch (msg.type) {
+                case "answer":
+                    await peerConnection.setRemoteDescription(new RTCSessionDescription({
+                        type: "answer",
+                        sdp: msg.sdp
+                    }));
+                    break;
+                case "candidate":
+                    if (msg.candidate) {
+                        await peerConnection.addIceCandidate(msg.candidate);
+                    }
+                    break;
+            }
+        }
+
+        async function handleSWRequest(reqData, port) {
+            try {
+                await bootstrap();
+
+                const url = new URL(reqData.url);
+                const hostname = url.hostname;
+                const parts = hostname.split('.');
+                let serviceName = parts.length > 0 ? parts[0] : "default";
+
+                console.log(`[Page] Proxying ${reqData.method} ${url.pathname} to ${serviceName}`);
+
+                // Create DataChannel
+                const dcLabel = "req-" + Math.random().toString(36).substr(2, 5);
+                const dc = peerConnection.createDataChannel(dcLabel);
+
+                let responseBuffer = [];
+                let headersParsed = false;
+
+                dc.onopen = () => {
+                    try {
+                        // 1. Send Preamble
+                        const serviceBytes = new TextEncoder().encode(serviceName);
+                        const preamble = new Uint8Array(1 + serviceBytes.length);
+                        preamble[0] = serviceBytes.length;
+                        preamble.set(serviceBytes, 1);
+                        dc.send(preamble);
+
+                        // 2. Send Request Line & Headers
+                        const headers = reqData.headers.map(h => `${h[0]}: ${h[1]}`);
+                        let reqStr = `${reqData.method} ${url.pathname + url.search} ${HTTP_VERSION}\r\n`;
+                        reqStr += headers.join('\r\n') + '\r\n\r\n';
+                        dc.send(new TextEncoder().encode(reqStr));
+
+                        // 3. Send Body
+                        if (reqData.body) {
+                            dc.send(reqData.body);
+                        }
+                    } catch (e) {
+                        console.error("DC Send Error", e);
+                        port.postMessage({ type: 'ERROR', message: e.toString() });
+                    }
+                };
+
+                dc.onmessage = (event) => {
+                    const chunk = new Uint8Array(event.data);
+                    if (headersParsed) {
+                        port.postMessage({ type: 'RESPONSE_CHUNK', chunk }, [chunk.buffer]);
+                    } else {
+                        responseBuffer.push(...chunk);
+                        const endpoint = findDoubleCRLF(responseBuffer);
+                        if (endpoint !== -1) {
+                            const headerBytes = new Uint8Array(responseBuffer.slice(0, endpoint));
+                            const bodyBytes = new Uint8Array(responseBuffer.slice(endpoint + 4));
+
+                            const headerStr = new TextDecoder().decode(headerBytes);
+                            const { status, headers } = parseHeaders(headerStr);
+
+                            // Send headers to SW
+                            const headerList = [];
+                            headers.forEach((v, k) => headerList.push([k, v]));
+                            port.postMessage({ type: 'RESPONSE_HEAD', status, headers: headerList });
+
+                            headersParsed = true;
+                            if (bodyBytes.length > 0) {
+                                port.postMessage({ type: 'RESPONSE_CHUNK', chunk: bodyBytes }, [bodyBytes.buffer]);
+                            }
+                            responseBuffer = [];
+                        }
+                    }
+                };
+
+                dc.onclose = () => {
+                    port.postMessage({ type: 'RESPONSE_END' });
+                };
+
+                dc.onerror = (e) => {
+                    port.postMessage({ type: 'ERROR', message: "DataChannel Error" });
+                };
+
+            } catch (e) {
+                console.error("Handle Request Error", e);
+                port.postMessage({ type: 'ERROR', message: e.toString() });
+            }
+        }
+
         async function reloadContent() {
             console.log('[Page] Fetching actual content...');
+            const container = document.getElementById('peer-content');
             try {
                 const response = await fetch(window.location.href, {
                     headers: { 'X-Peer-Proxy': 'true' }
                 });
-                
-                if (!response.body) {
-                    throw new Error("Response body is null");
+
+                if (!response.ok) {
+                    throw new Error(`Fetch failed with status ${response.statusText} (${response.status})`);
                 }
 
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder("utf-8");
+                const html = await response.text();
+                const parser = new DOMParser();
+                const newDoc = parser.parseFromString(html, 'text/html');
 
-                document.open();
-                
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    // Stream decode: handles multi-byte characters split across chunks
-                    const text = decoder.decode(value, { stream: true });
-                    document.write(text);
+                // 1. Merge <head> elements
+                document.title = newDoc.title; // Update title
+
+                // A more sophisticated strategy could be used to avoid duplicates.
+                // For example, checking if a stylesheet with the same href already exists.
+                newDoc.head.querySelectorAll('link[rel="stylesheet"], style, meta').forEach(node => {
+                    document.head.appendChild(node.cloneNode(true));
+                });
+
+                // 2. Replace body content within our container
+                container.innerHTML = newDoc.body.innerHTML;
+
+                // 3. Re-execute scripts from the new body
+                // Scripts inserted via innerHTML do not execute. We must create new script
+                // elements for the browser to run them.
+                const scripts = Array.from(container.querySelectorAll('script'));
+                for (const oldScript of scripts) {
+                    const newScript = document.createElement('script');
+
+                    // Copy all attributes (e.g., src, type, async)
+                    for (const attr of oldScript.attributes) {
+                        newScript.setAttribute(attr.name, attr.value);
+                    }
+
+                    // Copy inline script content
+                    if (oldScript.textContent) {
+                        newScript.textContent = oldScript.textContent;
+                    }
+
+                    // Replace the old script tag with the new one to trigger execution
+                    oldScript.parentNode.replaceChild(newScript, oldScript);
                 }
-                
-                document.close();
             } catch (err) {
                 console.error('[Page] Content Load Failed:', err);
-                document.open();
-                document.write("<h1>Connection Failed</h1><p>Failed to load content from peer.</p>");
-                document.close();
+                container.innerHTML = `<h1>Connection Failed</h1><p>Failed to load content from peer. ${err.message}</p>`;
             }
+        }
+
+        function findDoubleCRLF(buffer) {
+            for (let i = 0; i < buffer.length - 3; i++) {
+                if (buffer[i] === 13 && buffer[i + 1] === 10 && buffer[i + 2] === 13 && buffer[i + 3] === 10) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        function parseHeaders(headerStr) {
+            const lines = headerStr.split('\r\n');
+            const statusLine = lines[0];
+            const statusMatch = statusLine.match(/^HTTP\/[0-9.]+\s+(\d+)\s+(.+)$/);
+            const status = statusMatch ? parseInt(statusMatch[1]) : 200;
+
+            const headers = new Headers();
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i];
+                if (!line) continue;
+                const colon = line.indexOf(':');
+                if (colon > 0) {
+                    headers.append(line.substring(0, colon).trim(), line.substring(colon + 1).trim());
+                }
+            }
+            return { status, headers };
         }
 
         init();
     </script>
 </body>
+
 </html>
