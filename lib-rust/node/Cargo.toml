@@ -16,6 +16,8 @@ store-sqlite = { package = "syneroym-store-sqlite", path = "../store-sqlite" }
 app-host = { package = "syneroym-app-host", path = "../app-host" }
 protocol-base = { package = "syneroym-protocol-base", path = "../protocol-base" }
 peer-proxy-http = { package = "syneroym-peer-proxy-http", path = "../peer-proxy-http" }
+signaling-server = { package = "syneroym-signaling-server", path = "../signaling-server" }
+peer-web-gateway = { package = "syneroym-peer-web-gateway", path = "../peer-web-gateway" }
 iroh = "0.95"
 anyhow.workspace = true
 tokio.workspace = true

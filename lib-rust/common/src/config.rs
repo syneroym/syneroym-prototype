@@ -13,6 +13,10 @@ pub struct Config {
     pub alpn_protocols: Vec<String>,
     /// Path to the local data store (rqlite/sqlite).
     pub data_store_path: PathBuf,
+    /// Peer Gateway configuration
+    pub peer_gateway: Option<PeerGatewayConfig>,
+    /// Signaling Server configuration
+    pub signaling_server: Option<SignalingServerConfig>,
 }
 
 impl Default for Config {
@@ -23,6 +27,38 @@ impl Default for Config {
             enabled_comms: vec!["iroh".to_string()],
             alpn_protocols: vec![],
             data_store_path: PathBuf::from("syneroym_data.db"),
+            peer_gateway: Some(PeerGatewayConfig::default()),
+            signaling_server: Some(SignalingServerConfig::default()),
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct PeerGatewayConfig {
+    pub enabled: bool,
+    pub port: u16,
+}
+
+impl Default for PeerGatewayConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: 8001,
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct SignalingServerConfig {
+    pub enabled: bool,
+    pub port: u16,
+}
+
+impl Default for SignalingServerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: 8000,
         }
     }
 }

@@ -24,24 +24,10 @@ pub async fn init(config: &Config, handlers: Vec<Arc<dyn ProtocolHandler>>) -> R
     if let Some(webrtc_config) = &config.comm_webrtc {
         info!("Initializing WebRTC communication...");
 
-        // 1. Start Signaling Server (hosted by this node for this demo)
-        // Check if we should start it based on config URL or defaults.
-        // For now, always start it on port 8000 if not specified, or parse the URL.
         let signaling_url = webrtc_config
             .signaling_server_url
             .clone()
             .unwrap_or_else(|| "ws://localhost:8000/ws".to_string());
-
-        if signaling_url.contains("localhost") || signaling_url.contains("127.0.0.1") {
-            // naive check: if we are pointing to localhost, assume we need to start it.
-            let port = 8000; // extract from URL in real impl
-            info!("Starting embedded signaling server on port {}", port);
-            tokio::spawn(async move {
-                signaling_server::start_server(port).await;
-            });
-            // Give it a moment to start
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        }
 
         // 2. Initialize WebRTC API
         let mut m = MediaEngine::default();
