@@ -8,7 +8,6 @@
             "name": "Debug executable 'syneroym-cli'",
             "type": "lldb",
             "request": "launch",
-            "cwd": "${workspaceFolder}/app-cli",
             "cargo": {
                 "args": [
                     "run",
@@ -19,7 +18,7 @@
             "args": [
                 "run-peer",
                 "--config-file",
-                "config.toml"
+                "app-cli/config.toml"
             ],
             "env": {
                 "RUST_LOG": "syneroym=debug,info"
