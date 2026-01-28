@@ -155,8 +155,8 @@ async fn list_files(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     // Ensure directory exists
     if let Ok(mut entries) = tokio::fs::read_dir(&state.data_dir).await {
         while let Ok(Some(entry)) = entries.next_entry().await {
-            if let Ok(metadata) = entry.metadata().await {
-                if metadata.is_file() {
+            if let Ok(metadata) = entry.metadata().await
+                && metadata.is_file() {
                     // Filter out the database file
                     let name = entry.file_name().to_string_lossy().to_string();
                     if !name.ends_with(".db") {
@@ -166,7 +166,6 @@ async fn list_files(State(state): State<Arc<AppState>>) -> impl IntoResponse {
                         });
                     }
                 }
-            }
         }
     }
     Json(files)
@@ -239,11 +238,10 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                     comment_update_timestamp: Some(msg),
                     recd_msg: None,
                 };
-                if let Ok(json) = serde_json::to_string(&ws_msg) {
-                    if socket.send(Message::Text(json.into())).await.is_err() {
+                if let Ok(json) = serde_json::to_string(&ws_msg)
+                    && socket.send(Message::Text(json.into())).await.is_err() {
                         break;
                     }
-                }
             }
             Some(msg) = socket.recv() => {
                 match msg {
@@ -253,11 +251,10 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                             comment_update_timestamp: None,
                             recd_msg: Some(format!("[{}] Received: {}", chrono::Utc::now(), text).to_string()),
                         };
-                         if let Ok(json) = serde_json::to_string(&ws_msg) {
-                            if socket.send(Message::Text(json.into())).await.is_err() {
+                         if let Ok(json) = serde_json::to_string(&ws_msg)
+                            && socket.send(Message::Text(json.into())).await.is_err() {
                                 break;
                             }
-                        }
                     }
                     Ok(Message::Close(_)) | Err(_) => {
                         break;
