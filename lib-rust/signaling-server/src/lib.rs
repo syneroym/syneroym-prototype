@@ -43,7 +43,7 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) ->
 }
 
 async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
-    let (mut sender, mut receiver) = socket.split();
+    let (mut ws_sink, mut ws_stream) = socket.split();
 
     // 1. Wait for "register" message or just generate an ID?
     // For simplicity, let's assume the first message contains the Peer ID.
@@ -52,10 +52,10 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     // or a simple ID-based routing if the message has a "target" field.
 
     // We'll use a broadcast channel for this connection so we can subscribe to messages from others.
-    let (tx, mut rx) = broadcast::channel(100);
+    let (send_ch, mut rcv_ch) = broadcast::channel(100);
 
     // Perform a simple handshake: wait for {"type": "register", "id": "my-id"}
-    let peer_id = if let Some(Ok(Message::Text(text))) = receiver.next().await {
+    let peer_id = if let Some(Ok(Message::Text(text))) = ws_stream.next().await {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
             if v["type"] == "register" {
                 v["id"].as_str().map(|s| s.to_string())
@@ -81,20 +81,20 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
 
     {
         let mut peers = state.peers.lock().unwrap();
-        peers.insert(peer_id.clone(), tx.clone());
+        peers.insert(peer_id.clone(), send_ch.clone());
     }
 
     // Spawn a task to forward messages from the broadcast channel to the websocket
     let send_task = tokio::spawn(async move {
-        while let Ok(msg) = rx.recv().await {
-            if sender.send(Message::Text(msg)).await.is_err() {
+        while let Ok(msg) = rcv_ch.recv().await {
+            if ws_sink.send(Message::Text(msg)).await.is_err() {
                 break;
             }
         }
     });
 
     // Loop to receive messages from websocket and route them
-    while let Some(Ok(msg)) = receiver.next().await {
+    while let Some(Ok(msg)) = ws_stream.next().await {
         if let Message::Text(text) = msg {
             // Expect message format: { "target": "peer-id", ... }
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {

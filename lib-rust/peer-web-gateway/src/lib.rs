@@ -23,9 +23,10 @@ type NodeId = EndpointAddr;
 struct AppState {
     iroh: Endpoint,
     target: NodeId,
+    signaling_server_url: String,
 }
 
-pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
+pub async fn start(port: u16, target: NodeId, signaling_server_url: String) -> anyhow::Result<()> {
     info!(
         "Starting LocalNode Web Gateway on port {}, target: {:?}",
         port, target
@@ -36,6 +37,7 @@ pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
     let state = AppState {
         iroh: endpoint,
         target,
+        signaling_server_url,
     };
 
     let app = Router::new()
@@ -54,15 +56,15 @@ pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
 
 #[derive(Template)]
 #[template(path = "index.html")]
-struct IndexTemplate;
-
-#[derive(Template)]
-#[template(path = "sw.js", escape = "none")]
-struct SwTemplate<'a> {
+struct IndexTemplate<'a> {
     signaling_server_url: &'a str,
     target_peer_id: &'a str,
     http_version: &'a str,
 }
+
+#[derive(Template)]
+#[template(path = "sw.js", escape = "none")]
+struct SwTemplate;
 
 async fn index_handler(
     State(state): State<AppState>,
@@ -86,7 +88,11 @@ async fn index_handler(
         return ws.on_upgrade(move |socket| handle_socket(socket, state, host));
     }
 
-    let template = IndexTemplate;
+    let template = IndexTemplate {
+        signaling_server_url: &state.signaling_server_url,
+        target_peer_id: host.as_str(),
+        http_version: "HTTP/1.1",
+    };
 
     match template.render() {
         Ok(content) => Response::builder()
@@ -100,14 +106,10 @@ async fn index_handler(
     }
 }
 
-async fn sw_handler() -> Response {
+async fn sw_handler(State(_state): State<AppState>) -> Response {
     debug!("Received SW request");
 
-    let template = SwTemplate {
-        signaling_server_url: "ws://localhost:8000/ws",
-        target_peer_id: "host-node",
-        http_version: "HTTP/1.1",
-    };
+    let template = SwTemplate;
 
     match template.render() {
         Ok(content) => Response::builder()

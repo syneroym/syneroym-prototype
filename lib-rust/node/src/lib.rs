@@ -55,6 +55,8 @@ impl LocalNode {
 
             let node_addr = endpoint.addr();
 
+            let signaling_server_url = self.get_signaling_server_url();
+
             let node_addr_proxy = node_addr.clone();
             let proxy_fut = async move {
                 info!("Starting LocalNode Proxy HTTP...");
@@ -70,7 +72,7 @@ impl LocalNode {
                     && gw_conf.enabled
                 {
                     info!("Starting Peer Web Gateway on port {}", gw_conf.port);
-                    if let Err(e) = peer_web_gateway::start(gw_conf.port, node_addr_gateway).await {
+                    if let Err(e) = peer_web_gateway::start(gw_conf.port, node_addr_gateway, signaling_server_url).await {
                         error!("Peer Web Gateway failed: {}", e);
                     }
                 }
@@ -193,5 +195,19 @@ impl LocalNode {
             }
         }
         Ok(handlers)
+    }
+
+    fn get_signaling_server_url(&self) -> String {
+        if let Some(sig_conf) = &self.config.signaling_server
+            && sig_conf.enabled
+        {
+            format!("ws://localhost:{}/ws", sig_conf.port)
+        } else if let Some(webrtc_conf) = &self.config.comm_webrtc
+            && let Some(url) = &webrtc_conf.signaling_server_url
+        {
+            url.clone()
+        } else {
+            "ws://localhost:8000/ws".to_string()
+        }
     }
 }
