@@ -1,15 +1,15 @@
 use axum::{
+    Router,
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         Json, Multipart, Path, State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    http::{header, StatusCode, Uri},
+    http::{StatusCode, Uri, header},
     response::{Html, IntoResponse},
     routing::{get, post},
-    Router,
 };
 use clap::Parser;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use rust_embed::Embed;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
@@ -106,11 +106,11 @@ async fn get_recent_comments(State(state): State<Arc<AppState>>) -> impl IntoRes
         Ok(Err(e)) => {
             eprintln!("Database query error: {}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response()
-        },
+        }
         Err(e) => {
             eprintln!("Join error: {}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response()
-        },
+        }
     }
 }
 
@@ -132,15 +132,15 @@ async fn save_comment(
         Ok(Ok(_)) => {
             let _ = state.tx.send(chrono::Utc::now().to_rfc3339());
             StatusCode::CREATED
-        },
+        }
         Ok(Err(e)) => {
             eprintln!("Database error: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
-        },
+        }
         Err(e) => {
             eprintln!("Join error: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
-        },
+        }
     }
 }
 
@@ -156,16 +156,17 @@ async fn list_files(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     if let Ok(mut entries) = tokio::fs::read_dir(&state.data_dir).await {
         while let Ok(Some(entry)) = entries.next_entry().await {
             if let Ok(metadata) = entry.metadata().await
-                && metadata.is_file() {
-                    // Filter out the database file
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    if !name.ends_with(".db") {
-                        files.push(FileInfo {
-                            name,
-                            size: metadata.len(),
-                        });
-                    }
+                && metadata.is_file()
+            {
+                // Filter out the database file
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !name.ends_with(".db") {
+                    files.push(FileInfo {
+                        name,
+                        size: metadata.len(),
+                    });
                 }
+            }
         }
     }
     Json(files)
@@ -210,7 +211,7 @@ async fn download_file(
         Ok(file) => {
             let mime = mime_guess::from_path(&filename).first_or_octet_stream();
             ([(header::CONTENT_TYPE, mime.as_ref())], file).into_response()
-        },
+        }
         Err(_) => (StatusCode::NOT_FOUND, "File not found").into_response(),
     }
 }
@@ -273,7 +274,7 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
         Some(content) => {
             let mime = mime_guess::from_path(path).first_or_octet_stream();
             ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
-        },
+        }
         None => (StatusCode::NOT_FOUND, "404 Not Found").into_response(),
     }
 }

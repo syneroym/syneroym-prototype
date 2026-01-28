@@ -5,8 +5,8 @@ use args::Cli;
 use clap::Parser;
 use common::config::Config;
 use figment::{
-    providers::{Env, Format, Serialized, Toml},
     Figment,
+    providers::{Env, Format, Serialized, Toml},
 };
 
 const APP_ENV_VAR_PREFIX: &str = "SYNEROYM_";
@@ -30,10 +30,10 @@ async fn main() -> Result<()> {
         args::CliCommand::RunPeer(_) => {
             let node = node::LocalNode::new(conf).await?;
             node.bootstrap().await?;
-        },
+        }
         args::CliCommand::Version => {
             println!("Version: {}", env!("CARGO_PKG_VERSION"));
-        },
+        }
     }
 
     Ok(())

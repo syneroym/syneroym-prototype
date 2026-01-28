@@ -1,11 +1,11 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use common::stream::IrohStream;
 use iroh::{Endpoint, EndpointAddr};
 use protocol_base::SYNEROYM_ALPN;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use tls_parser::{parse_tls_plaintext, TlsMessage, TlsMessageHandshake};
+use tls_parser::{TlsMessage, TlsMessageHandshake, parse_tls_plaintext};
 use tokio::io::{self, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tracing::{debug, error, info};
@@ -125,10 +125,10 @@ fn extract_sni(buf: &[u8]) -> Result<String> {
                                 }
                             }
                         }
-                    },
+                    }
                     Err(e) => {
                         error!("Failed to parse TLS extensions: {:?}", e);
-                    },
+                    }
                 }
             }
         }

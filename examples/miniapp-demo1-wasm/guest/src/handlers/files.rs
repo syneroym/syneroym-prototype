@@ -38,7 +38,7 @@ pub fn handle_upload_file(req: Request) -> Response {
                     if chunk.eof {
                         break;
                     }
-                },
+                }
                 Err(e) => {
                     return Response {
                         code: codes::INTERNAL_ERROR,
@@ -46,8 +46,8 @@ pub fn handle_upload_file(req: Request) -> Response {
                         output_stream: None,
                         metadata: vec![],
                         error: Some(e),
-                    }
-                },
+                    };
+                }
             }
         }
 
@@ -117,7 +117,7 @@ pub fn handle_download_file(req: Request) -> Response {
                 ],
                 error: None,
             }
-        },
+        }
         Err(e) => {
             let code = if e.code == "FILE_NOT_FOUND" {
                 codes::NOT_FOUND
@@ -132,7 +132,7 @@ pub fn handle_download_file(req: Request) -> Response {
                 metadata: vec![],
                 error: Some(e),
             }
-        },
+        }
     }
 }
 

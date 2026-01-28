@@ -6,9 +6,9 @@ use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tracing::{debug, error, info, warn};
+use webrtc::api::APIBuilder;
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
-use webrtc::api::APIBuilder;
 use webrtc::data_channel::RTCDataChannel;
 use webrtc::interceptor::registry::Registry;
 use webrtc::peer_connection::configuration::RTCConfiguration;
@@ -94,7 +94,7 @@ async fn connect_signaling(
             Err(e) => {
                 error!("WebSocket error: {:?}", e);
                 break;
-            },
+            }
         };
 
         if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
@@ -166,10 +166,10 @@ async fn connect_signaling(
                         ))
                         .await?;
                     info!("Sent Answer to {}", sender_id);
-                },
+                }
                 _ => {
                     debug!("Unhandled signaling message: {}", type_str);
-                },
+                }
             }
         }
     }
@@ -201,7 +201,7 @@ async fn handle_data_channel(d: Arc<RTCDataChannel>, _handlers: Vec<Arc<dyn Prot
                         Err(e) => {
                             error!("Failed to read length: {}", e);
                             return;
-                        },
+                        }
                     };
 
                     // 2. Read Service Name
@@ -220,7 +220,7 @@ async fn handle_data_channel(d: Arc<RTCDataChannel>, _handlers: Vec<Arc<dyn Prot
                         _ => {
                             warn!("Unknown service: {}", service_name);
                             return;
-                        },
+                        }
                     };
 
                     match TcpStream::connect(backend_addr).await {
@@ -238,20 +238,20 @@ async fn handle_data_channel(d: Arc<RTCDataChannel>, _handlers: Vec<Arc<dyn Prot
                                         "Streaming finished for {}: sent {}, received {}",
                                         d_label, client_to_backend, backend_to_client
                                     );
-                                },
+                                }
                                 Err(e) => {
                                     debug!("Streaming error/end for {}: {}", d_label, e);
-                                },
+                                }
                             }
-                        },
+                        }
                         Err(e) => {
                             error!("Failed to connect to backend {}: {}", backend_addr, e);
-                        },
+                        }
                     }
-                },
+                }
                 Err(e) => {
                     error!("Failed to detach DataChannel '{}': {}", d_label, e);
-                },
+                }
             }
         })
     }));

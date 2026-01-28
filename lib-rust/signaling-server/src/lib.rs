@@ -1,11 +1,11 @@
 use axum::{
+    Router,
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
     routing::get,
-    Router,
 };
 use futures::{sink::SinkExt, stream::StreamExt};
 use std::{
@@ -74,7 +74,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
         None => {
             warn!("Client did not register correctly. Closing.");
             return;
-        },
+        }
     };
 
     info!("Peer registered: {}", peer_id);

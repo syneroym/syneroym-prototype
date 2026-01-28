@@ -69,7 +69,9 @@ impl LocalNode {
                 if let Some(gw_conf) = gateway_conf {
                     if gw_conf.enabled {
                         info!("Starting Peer Web Gateway on port {}", gw_conf.port);
-                        if let Err(e) = peer_web_gateway::start(gw_conf.port, node_addr_gateway).await {
+                        if let Err(e) =
+                            peer_web_gateway::start(gw_conf.port, node_addr_gateway).await
+                        {
                             error!("Peer Web Gateway failed: {}", e);
                         }
                     }
@@ -99,14 +101,14 @@ impl LocalNode {
                     if let Some(router) = net_iroh::init(&self.config, handlers.clone()).await? {
                         iroh_router = Some(router);
                     }
-                },
+                }
                 "webrtc" => {
                     info!("Initializing WebRTC interface...");
                     net_webrtc::init(&self.config, handlers.clone()).await?;
-                },
+                }
                 _ => {
                     info!("Unknown or unimplemented communication interface: {}", comm);
-                },
+                }
             }
         }
         Ok(iroh_router)
@@ -186,10 +188,10 @@ impl LocalNode {
 
                     handler.setup(protocol_rpcs).await?;
                     handlers.push(handler);
-                },
+                }
                 _ => {
                     info!("No handler found for protocol: {}", protocol);
-                },
+                }
             }
         }
         Ok(handlers)

@@ -42,7 +42,7 @@ pub fn handle_list_comments(_req: Request) -> Response {
                 metadata: vec![("content-type".to_string(), "application/json".to_string())],
                 error: None,
             }
-        },
+        }
         Err(e) => Response {
             code: codes::INTERNAL_ERROR,
             payload: None,
@@ -67,8 +67,8 @@ pub fn handle_create_comment(req: Request) -> Response {
                     code: "MISSING_PAYLOAD".to_string(),
                     details: None,
                 }),
-            }
-        },
+            };
+        }
     };
 
     let comment: CreateComment = match serde_json::from_slice(&payload) {
@@ -84,8 +84,8 @@ pub fn handle_create_comment(req: Request) -> Response {
                     code: "INVALID_JSON".to_string(),
                     details: None,
                 }),
-            }
-        },
+            };
+        }
     };
 
     let data = serde_json::json!({ "text": comment.text });
@@ -108,7 +108,7 @@ pub fn handle_create_comment(req: Request) -> Response {
                 metadata: vec![("content-type".to_string(), "application/json".to_string())],
                 error: None,
             }
-        },
+        }
         Err(e) => Response {
             code: codes::INTERNAL_ERROR,
             payload: None,

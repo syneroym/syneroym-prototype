@@ -1,5 +1,5 @@
 use crate::types::{FileInfo, StreamInfo};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::path::{Path, PathBuf};
 
 pub struct FileOperations;

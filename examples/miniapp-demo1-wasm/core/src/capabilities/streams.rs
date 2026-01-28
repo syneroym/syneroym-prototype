@@ -1,5 +1,5 @@
 use crate::types::{StreamChunk, StreamInfo};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -85,7 +85,7 @@ impl StreamManager {
                     data: buffer,
                     eof: false,
                 })
-            },
+            }
             Err(e) => Err(anyhow!("Read error: {}", e)),
         };
 

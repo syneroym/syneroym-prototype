@@ -1,13 +1,13 @@
 use askama::Template;
 use axum::{
+    Router,
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         Host, State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    http::{header, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
     routing::get,
-    Router,
 };
 use common::stream::IrohStream;
 use futures::{SinkExt, StreamExt};
@@ -96,7 +96,7 @@ async fn index_handler(
         Err(e) => {
             tracing::error!("Index template rendering failed: {}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
-        },
+        }
     }
 }
 
@@ -118,7 +118,7 @@ async fn sw_handler() -> Response {
         Err(e) => {
             tracing::error!("SW template rendering failed: {}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
-        },
+        }
     }
 }
 
@@ -128,7 +128,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, host: String) {
         Err(e) => {
             error!("Failed to extract service name: {}", e);
             return;
-        },
+        }
     };
 
     debug!("Connecting to Iroh target for service: {}", svc_name);
@@ -167,11 +167,11 @@ async fn handle_socket(socket: WebSocket, state: AppState, host: String) {
                                     {
                                         break;
                                     }
-                                },
+                                }
                                 Err(e) => {
                                     error!("Error reading from Iroh: {}", e);
                                     break;
-                                },
+                                }
                             }
                         }
                     };
@@ -183,14 +183,14 @@ async fn handle_socket(socket: WebSocket, state: AppState, host: String) {
                                     if iroh_writer.write_all(&data).await.is_err() {
                                         break;
                                     }
-                                },
+                                }
                                 Ok(Message::Text(text)) => {
                                     if iroh_writer.write_all(text.as_bytes()).await.is_err() {
                                         break;
                                     }
-                                },
+                                }
                                 Ok(Message::Close(_)) => break,
-                                _ => {}, // Ping/Pong
+                                _ => {} // Ping/Pong
                             }
                         }
                     };
@@ -200,10 +200,10 @@ async fn handle_socket(socket: WebSocket, state: AppState, host: String) {
                         _ = ws_to_iroh => {},
                     }
                     debug!("Proxy connection closed for {}", svc_name);
-                },
+                }
                 Err(e) => error!("Failed to open bi stream: {}", e),
             }
-        },
+        }
         Err(e) => error!("Failed to connect to iroh target: {}", e),
     }
 }

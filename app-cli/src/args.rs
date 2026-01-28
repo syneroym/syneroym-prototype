@@ -25,8 +25,8 @@ impl Cli {
                 if let Some(ref secret_key_path) = args.secret_key_path {
                     fig = fig.merge(("comm_iroh.secret_key_path", secret_key_path));
                 }
-            },
-            CliCommand::Version => {},
+            }
+            CliCommand::Version => {}
         }
         fig
     }

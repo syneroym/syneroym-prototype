@@ -2,8 +2,8 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
-use tonic::{transport::Server, Request, Response, Status, Streaming};
+use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
+use tonic::{Request, Response, Status, Streaming, transport::Server};
 use wasm_service_core::*;
 
 // Include generated proto code
@@ -114,7 +114,7 @@ impl WasmService for GrpcTransport {
 
                 let proto_resp = self.canonical_to_proto(canonical_resp);
                 Ok(Response::new(proto_resp))
-            },
+            }
             Err(e) => Err(Status::internal(format!("Runtime error: {}", e))),
         }
     }
@@ -137,7 +137,7 @@ impl WasmService for GrpcTransport {
                 let stream = futures::stream::once(async move { Ok(proto_resp) });
 
                 Ok(Response::new(Box::pin(stream) as Self::ServerStreamStream))
-            },
+            }
             Err(e) => Err(Status::internal(format!("Runtime error: {}", e))),
         }
     }
@@ -164,7 +164,7 @@ impl WasmService for GrpcTransport {
                 Ok(canonical_resp) => {
                     let proto_resp = self.canonical_to_proto(canonical_resp);
                     Ok(Response::new(proto_resp))
-                },
+                }
                 Err(e) => Err(Status::internal(format!("Runtime error: {}", e))),
             }
         } else {
@@ -234,19 +234,19 @@ impl WasmService for GrpcTransport {
                                 if tx.send(Ok(proto_resp)).await.is_err() {
                                     break;
                                 }
-                            },
+                            }
                             Err(e) => {
                                 let _ = tx
                                     .send(Err(Status::internal(format!("Runtime error: {}", e))))
                                     .await;
                                 break;
-                            },
+                            }
                         }
-                    },
+                    }
                     Err(e) => {
                         let _ = tx.send(Err(e)).await;
                         break;
-                    },
+                    }
                 }
             }
         });

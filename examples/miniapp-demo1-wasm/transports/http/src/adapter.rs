@@ -1,13 +1,13 @@
 use axum::{
+    Router,
     body::Body,
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         Multipart, Path, State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Router,
 };
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
@@ -84,7 +84,7 @@ impl HttpTransport {
             Err(e) => {
                 tracing::error!("Runtime error: {}", e);
                 (StatusCode::INTERNAL_SERVER_ERROR, "Runtime error").into_response()
-            },
+            }
         }
     }
 
@@ -108,8 +108,8 @@ impl HttpTransport {
                         StatusCode::INTERNAL_SERVER_ERROR,
                         format!("Upload error: {}", e),
                     )
-                        .into_response()
-                },
+                        .into_response();
+                }
             };
 
             // Create input stream from buffered bytes
@@ -142,7 +142,7 @@ impl HttpTransport {
                 Err(e) => {
                     tracing::error!("Runtime error: {}", e);
                     (StatusCode::INTERNAL_SERVER_ERROR, "Runtime error").into_response()
-                },
+                }
             }
         } else {
             (StatusCode::BAD_REQUEST, "No file provided").into_response()

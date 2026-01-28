@@ -22,8 +22,8 @@ pub fn handle_chat_stream(ctx: StreamContext, payload: Vec<u8>) -> Response {
                     code: "INVALID_MESSAGE".to_string(),
                     details: None,
                 }),
-            }
-        },
+            };
+        }
     };
 
     if message.text.len() > 500 {
@@ -56,8 +56,8 @@ pub fn handle_chat_stream(ctx: StreamContext, payload: Vec<u8>) -> Response {
                 output_stream: None,
                 metadata: vec![],
                 error: Some(e),
-            }
-        },
+            };
+        }
     };
 
     let confirmation = serde_json::json!({

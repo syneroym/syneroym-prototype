@@ -2,12 +2,12 @@ use anyhow::Result;
 use common::config::Config;
 use common::stream::IrohStream;
 use iroh::{
+    Endpoint,
     endpoint::{Connection, RecvStream, SendStream},
     protocol::{AcceptError, ProtocolHandler as IrohProtocolHandler, Router},
-    Endpoint,
 };
-use n0_error::e;
 use n0_error::AnyError;
+use n0_error::e;
 use protocol_base::{ProtocolHandler, SYNEROYM_ALPN};
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
@@ -102,7 +102,7 @@ async fn handle_stream((mut send, mut recv): (SendStream, RecvStream)) -> Result
             return Err(e!(AcceptError::User {
                 source: AnyError::from_std(e)
             }));
-        },
+        }
     };
     let backend_addr = match service.as_str() {
         "demo3001" => "127.0.0.1:3001",
@@ -113,10 +113,10 @@ async fn handle_stream((mut send, mut recv): (SendStream, RecvStream)) -> Result
                 Err(e) => {
                     return Err(e!(AcceptError::User {
                         source: AnyError::from_std(e)
-                    }))
-                },
+                    }));
+                }
             };
-        },
+        }
     };
 
     // --- Connect to backend HTTP server ---
@@ -130,10 +130,10 @@ async fn handle_stream((mut send, mut recv): (SendStream, RecvStream)) -> Result
                 "--> wrote to service {} bytes, <-- wrote back to iroh {} bytes",
                 client_to_backend, backend_to_client
             );
-        },
+        }
         Err(e) => {
             error!("stream error: {e:?}");
-        },
+        }
     }
 
     Ok(())
