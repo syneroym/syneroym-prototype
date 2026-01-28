@@ -1,7 +1,7 @@
 [package]
 name = "wasm-service-guest"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 crate-type = ["cdylib"]
@@ -11,7 +11,11 @@ wit-bindgen = { version = "0.30" }
 wit-bindgen-rt = { version = "0.30", features = ["bitflags"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-chrono = { version = "0.4", default-features = false, features = ["serde", "std", "clock"] }
+chrono = { version = "0.4", default-features = false, features = [
+    "serde",
+    "std",
+    "clock",
+] }
 mime_guess = { workspace = true }
 
 [package.metadata.component]
