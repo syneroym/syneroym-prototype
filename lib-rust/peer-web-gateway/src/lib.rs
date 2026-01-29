@@ -55,8 +55,8 @@ pub async fn start(port: u16, target: NodeId, signaling_server_url: String) -> a
 }
 
 #[derive(Template)]
-#[template(path = "index.html")]
-struct IndexTemplate<'a> {
+#[template(path = "peer-proxy.html")]
+struct PeerProxyTemplate<'a> {
     signaling_server_url: &'a str,
     target_peer_id: &'a str,
     http_version: &'a str,
@@ -88,7 +88,7 @@ async fn index_handler(
         return ws.on_upgrade(move |socket| handle_socket(socket, state, host));
     }
 
-    let template = IndexTemplate {
+    let template = PeerProxyTemplate {
         signaling_server_url: &state.signaling_server_url,
         target_peer_id: host.as_str(),
         http_version: "HTTP/1.1",
