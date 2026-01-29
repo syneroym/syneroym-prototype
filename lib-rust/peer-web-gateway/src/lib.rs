@@ -88,9 +88,11 @@ async fn index_handler(
         return ws.on_upgrade(move |socket| handle_socket(socket, state, host));
     }
 
+    let peer_id = extract_peer_id_from_host(&host);
+
     let template = PeerProxyTemplate {
         signaling_server_url: &state.signaling_server_url,
-        target_peer_id: host.as_str(),
+        target_peer_id: &peer_id,
         http_version: "HTTP/1.1",
     };
 
@@ -207,6 +209,14 @@ async fn handle_socket(socket: WebSocket, state: AppState, host: String) {
             }
         }
         Err(e) => error!("Failed to connect to iroh target: {}", e),
+    }
+}
+
+fn extract_peer_id_from_host(host: &str) -> String {
+    let hostname = host.split(':').next().unwrap_or(host);
+    match hostname.split_once('.') {
+        Some((_, rest)) => rest.to_string(),
+        None => hostname.to_string(),
     }
 }
 

@@ -41,7 +41,7 @@ pub async fn init(config: &Config, handlers: Vec<Arc<dyn ProtocolHandler>>) -> R
             .with_interceptor_registry(registry)
             .build();
 
-        let config = RTCConfiguration {
+        let rtc_config = RTCConfiguration {
             ice_servers: vec![webrtc::ice_transport::ice_server::RTCIceServer {
                 urls: vec!["stun:stun.l.google.com:19302".to_owned()],
                 ..Default::default()
@@ -51,11 +51,15 @@ pub async fn init(config: &Config, handlers: Vec<Arc<dyn ProtocolHandler>>) -> R
 
         // 3. Connect to Signaling Server and handle incoming connections
         let api = Arc::new(api);
-        let config = config.clone();
+        let rtc_config = rtc_config.clone();
         let handlers = handlers.clone();
 
+        let peer_id = "localhost".to_string(); // TODO use the node ID hash after standardizing that. 
+
         tokio::spawn(async move {
-            if let Err(e) = connect_signaling(signaling_url, api, config, handlers).await {
+            if let Err(e) =
+                connect_signaling(peer_id, signaling_url, api, rtc_config, handlers).await
+            {
                 error!("Signaling client error: {:?}", e);
             }
         });
@@ -66,6 +70,7 @@ pub async fn init(config: &Config, handlers: Vec<Arc<dyn ProtocolHandler>>) -> R
 }
 
 async fn connect_signaling(
+    peer_id: String,
     url: String,
     api: Arc<webrtc::api::API>,
     config: RTCConfiguration,
@@ -76,7 +81,6 @@ async fn connect_signaling(
     let (mut write, mut read) = ws_stream.split();
 
     // Register
-    let peer_id = uuid::Uuid::new_v4().to_string();
     let register_msg = serde_json::json!({
         "type": "register",
         "id": peer_id
