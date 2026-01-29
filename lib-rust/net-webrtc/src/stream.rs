@@ -18,51 +18,64 @@ pub struct WebRTCStream {
 
 impl WebRTCStream {
     pub fn new(channel: Arc<DetachedDataChannel>) -> Self {
-        let (local, mut remote) = tokio::io::duplex(65536); // 64KB buffer
+        let (local, remote) = tokio::io::duplex(65536); // 64KB buffer
+
+        // Split the duplex stream into read and write halves
+        let (mut remote_read, mut remote_write) = tokio::io::split(remote);
+        let channel_read = channel.clone();
+        let channel_write = channel.clone();
 
         tokio::spawn(async move {
-            let mut buf_in = vec![0u8; 8192]; // Buffer for incoming WebRTC data
-            let mut buf_out = vec![0u8; 8192]; // Buffer for outgoing WebRTC data
-
-            loop {
-                tokio::select! {
-                    // Read from WebRTC -> Write to Duplex (to be read by user)
-                    res = channel.read(&mut buf_in) => {
-                        match res {
-                            Ok(0) => break, // EOF
-                            Ok(n) => {
-                                if let Err(e) = remote.write_all(&buf_in[..n]).await {
-                                    debug!("WebRTCStream bridge: failed to write to duplex: {}", e);
-                                    break;
-                                }
-                            },
-                            Err(e) => {
-                                error!("WebRTCStream bridge: WebRTC read error: {}", e);
+            // Task 1: Read from WebRTC -> Write to Duplex
+            let inbound = tokio::spawn(async move {
+                let mut buf_in = vec![0u8; 8192];
+                loop {
+                    match channel_read.read(&mut buf_in).await {
+                        Ok(0) => break, // EOF
+                        Ok(n) => {
+                            if let Err(e) = remote_write.write_all(&buf_in[..n]).await {
+                                debug!("WebRTCStream bridge: failed to write to duplex: {}", e);
                                 break;
                             }
-                        }
-                    },
-                    // Read from Duplex (written by user) -> Write to WebRTC
-                    res = remote.read(&mut buf_out) => {
-                        match res {
-                            Ok(0) => break, // EOF
-                            Ok(n) => {
-                                let data = bytes::Bytes::copy_from_slice(&buf_out[..n]);
-                                if let Err(e) = channel.write(&data).await {
-                                    error!("WebRTCStream bridge: WebRTC write error: {}", e);
-                                    break;
-                                }
-                            },
-                            Err(e) => {
-                                debug!("WebRTCStream bridge: duplex read error: {}", e);
-                                break;
-                            }
+                        },
+                        Err(e) => {
+                            error!("WebRTCStream bridge: WebRTC read error: {}", e);
+                            break;
                         }
                     }
                 }
-            }
-            debug!("WebRTCStream bridge task finished");
-            // Channel will be dropped here, closing the connection
+                // Close the write side of the duplex to signal EOF to the user
+                let _ = remote_write.shutdown().await;
+            });
+
+            // Task 2: Read from Duplex -> Write to WebRTC
+            let outbound = tokio::spawn(async move {
+                let mut buf_out = vec![0u8; 8192];
+                loop {
+                    match remote_read.read(&mut buf_out).await {
+                        Ok(0) => break, // EOF
+                        Ok(n) => {
+                            let data = bytes::Bytes::copy_from_slice(&buf_out[..n]);
+                            if let Err(e) = channel_write.write(&data).await {
+                                error!("WebRTCStream bridge: WebRTC write error: {}", e);
+                                break;
+                            }
+                        },
+                        Err(e) => {
+                            debug!("WebRTCStream bridge: duplex read error: {}", e);
+                            break;
+                        }
+                    }
+                }
+            });
+
+            // Wait for both to finish (or one to fail/close, depending on desired semantics)
+            // Usually, if one side closes, we might want to tear down the other, 
+            // but keeping them independent allows half-open connections if supported.
+            // For simplicity here, we just await both.
+            let _ = tokio::join!(inbound, outbound);
+            
+            debug!("WebRTCStream bridge tasks finished");
         });
 
         Self { inner: local }
