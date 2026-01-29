@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bootstrapping peer...</title>
     <script>
         const SIGNALING_SERVER_URL = "{{ signaling_server_url }}";
@@ -235,44 +234,77 @@
 
         async function reloadContent() {
             console.log('[Page] Fetching actual content...');
+            const controller = new AbortController();
             try {
                 // Fetch the current URL. The Service Worker should intercept this
                 // and proxy it through the now-established WebRTC connection.
                 const response = await fetch(window.location.href, {
-                    headers: { 'X-Peer-Proxy': 'true' }
+                    headers: { 'X-Peer-Proxy': 'true' },
+                    signal: controller.signal
                 });
 
                 if (!response.ok) {
                     throw new Error(`Fetch failed with status ${response.statusText} (${response.status})`);
                 }
 
-                const html = await response.text();
-                const parser = new DOMParser();
-                const newDoc = parser.parseFromString(html, 'text/html');
+                const contentType = response.headers.get('content-type') || '';
 
-                // 1. Merge <head> elements
-                document.title = newDoc.title;
-                newDoc.head.querySelectorAll('link[rel="stylesheet"], style, meta').forEach(node => {
-                    // avoid duplicating meta charset/viewport if possible, but browsers handle it ok
-                    document.head.appendChild(node.cloneNode(true));
-                });
+                if (contentType.includes('text/html')) {
+                    const html = await response.text();
+                    const parser = new DOMParser();
+                    const newDoc = parser.parseFromString(html, 'text/html');
 
-                // 2. Replace body content
-                document.body.innerHTML = newDoc.body.innerHTML;
+                    // 1. Merge <head> elements
+                    document.title = newDoc.title;
 
-                // 3. Re-execute scripts from the new body
-                const scripts = Array.from(document.body.querySelectorAll('script'));
-                for (const oldScript of scripts) {
-                    const newScript = document.createElement('script');
-                    for (const attr of oldScript.attributes) {
-                        newScript.setAttribute(attr.name, attr.value);
+                    // Copy all nodes from new head to existing head
+                    Array.from(newDoc.head.childNodes).forEach(node => {
+                        document.head.appendChild(node.cloneNode(true));
+                    });
+
+                    // 2. Replace body content
+                    document.body.innerHTML = newDoc.body.innerHTML;
+
+                    // 3. Re-execute scripts from the new body
+                    const scripts = Array.from(document.body.querySelectorAll('script'));
+                    for (const oldScript of scripts) {
+                        const newScript = document.createElement('script');
+                        for (const attr of oldScript.attributes) {
+                            newScript.setAttribute(attr.name, attr.value);
+                        }
+                        if (oldScript.textContent) {
+                            newScript.textContent = oldScript.textContent;
+                        }
+                        oldScript.parentNode.replaceChild(newScript, oldScript);
                     }
-                    if (oldScript.textContent) {
-                        newScript.textContent = oldScript.textContent;
+                } else {
+                    // Handle non-HTML content (images, videos, PDFs)
+                    const contentLength = response.headers.get('content-length');
+                    const length = contentLength ? parseInt(contentLength, 10) : -1;
+                    let url;
+
+                    // If content is small (< 1MB), read it directly to avoid re-fetch overhead.
+                    // This check is better than just checking for "chunked" (missing Content-Length)
+                    // because it also protects against loading large files (e.g. 500MB videos) into memory
+                    // even if they have a known Content-Length.
+                    if (length !== -1 && length < 1024 * 1024) {
+                        const blob = await response.blob();
+                        url = URL.createObjectURL(blob);
+                    } else {
+                        // For large or unknown content, abort the initial fetch to save bandwidth
+                        // and let the iframe trigger a new streaming request handled by the SW.
+                        controller.abort();
+                        url = window.location.href;
                     }
-                    oldScript.parentNode.replaceChild(newScript, oldScript);
+
+                    document.body.innerHTML = '';
+                    const iframe = document.createElement('iframe');
+                    iframe.src = url;
+                    iframe.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; border:none;';
+                    document.body.appendChild(iframe);
                 }
             } catch (err) {
+                if (err.name === 'AbortError') return;
                 console.error('[Page] Content Load Failed:', err);
                 document.body.innerHTML = `<h3>Connection Failed</h3><p>Failed to load content from peer.</p><p>${err.message}</p>`;
             }
