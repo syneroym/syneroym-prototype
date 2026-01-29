@@ -11,6 +11,7 @@ alpn_protocols = ["syneroym/1.0"]
 [comm_iroh]
 # Path to the secret key file. Remove or leave empty to use a transient/default key.
 # secret_key_path = "./.iroh-secret"
+relay_url = "http://localhost:3340"
 
 # Optional custom Relay URL.
 # relay_url = "https://relay.example.com"
