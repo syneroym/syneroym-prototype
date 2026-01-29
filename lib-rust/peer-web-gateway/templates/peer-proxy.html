@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>Bootstrapping peer...</title>
@@ -147,6 +148,8 @@
             }
         }
 
+        const channelCache = new Map(); // serviceName -> { dc, queue, currentResponse: { ... } }
+
         async function handleSWRequest(reqData, port) {
             try {
                 await bootstrap();
@@ -158,77 +161,184 @@
 
                 console.log(`[Page] Proxying ${reqData.method} ${url.pathname} to ${serviceName}`);
 
-                // Create DataChannel
-                const dcLabel = "req-" + Math.random().toString(36).substr(2, 5);
-                const dc = peerConnection.createDataChannel(dcLabel);
+                let channelData = channelCache.get(serviceName);
 
-                let responseBuffer = [];
-                let headersParsed = false;
+                if (!channelData || channelData.dc.readyState !== 'open') {
+                    // Create new DataChannel
+                    const dcLabel = "req-" + Math.random().toString(36).substr(2, 5);
+                    const dc = peerConnection.createDataChannel(dcLabel);
 
-                dc.onopen = () => {
-                    try {
-                        // 1. Send Preamble
-                        const serviceBytes = new TextEncoder().encode(serviceName);
-                        const preamble = new Uint8Array(1 + serviceBytes.length);
-                        preamble[0] = serviceBytes.length;
-                        preamble.set(serviceBytes, 1);
-                        dc.send(preamble);
+                    channelData = {
+                        dc: dc,
+                        queue: [],
+                        currentResponse: null,
+                        serviceName: serviceName,
+                        isRequestInFlight: false
+                    };
+                    channelCache.set(serviceName, channelData);
 
-                        // 2. Send Request Line & Headers
-                        const headers = reqData.headers.map(h => `${h[0]}: ${h[1]}`);
-                        let reqStr = `${reqData.method} ${url.pathname + url.search} ${HTTP_VERSION}\r\n`;
-                        reqStr += headers.join('\r\n') + '\r\n\r\n';
-                        dc.send(new TextEncoder().encode(reqStr));
+                    setupChannelHandlers(channelData);
 
-                        // 3. Send Body
-                        if (reqData.body) {
-                            dc.send(reqData.body);
-                        }
-                    } catch (e) {
-                        console.error("DC Send Error", e);
-                        port.postMessage({ type: 'ERROR', message: e.toString() });
-                    }
-                };
+                    // Wait for open before processing
+                    await new Promise((resolve, reject) => {
+                        if (dc.readyState === 'open') resolve();
+                        dc.addEventListener('open', resolve, { once: true });
+                        dc.addEventListener('error', reject, { once: true });
+                    });
 
-                dc.onmessage = (event) => {
-                    const chunk = new Uint8Array(event.data);
-                    if (headersParsed) {
-                        port.postMessage({ type: 'RESPONSE_CHUNK', chunk }, [chunk.buffer]);
-                    } else {
-                        responseBuffer.push(...chunk);
-                        const endpoint = findDoubleCRLF(responseBuffer);
-                        if (endpoint !== -1) {
-                            const headerBytes = new Uint8Array(responseBuffer.slice(0, endpoint));
-                            const bodyBytes = new Uint8Array(responseBuffer.slice(endpoint + 4));
+                    // Send Preamble (only once per channel)
+                    const serviceBytes = new TextEncoder().encode(serviceName);
+                    const preamble = new Uint8Array(1 + serviceBytes.length);
+                    preamble[0] = serviceBytes.length;
+                    preamble.set(serviceBytes, 1);
+                    dc.send(preamble);
+                }
 
-                            const headerStr = new TextDecoder().decode(headerBytes);
-                            const { status, headers } = parseHeaders(headerStr);
-
-                            // Send headers to SW
-                            const headerList = [];
-                            headers.forEach((v, k) => headerList.push([k, v]));
-                            port.postMessage({ type: 'RESPONSE_HEAD', status, headers: headerList });
-
-                            headersParsed = true;
-                            if (bodyBytes.length > 0) {
-                                port.postMessage({ type: 'RESPONSE_CHUNK', chunk: bodyBytes }, [bodyBytes.buffer]);
-                            }
-                            responseBuffer = [];
-                        }
-                    }
-                };
-
-                dc.onclose = () => {
-                    port.postMessage({ type: 'RESPONSE_END' });
-                };
-
-                dc.onerror = (e) => {
-                    port.postMessage({ type: 'ERROR', message: "DataChannel Error" });
-                };
+                // Enqueue Request
+                channelData.queue.push({ reqData, port, url });
+                processQueue(channelData);
 
             } catch (e) {
                 console.error("Handle Request Error", e);
                 port.postMessage({ type: 'ERROR', message: e.toString() });
+            }
+        }
+
+        function setupChannelHandlers(channelData) {
+            const dc = channelData.dc;
+
+            dc.onmessage = (event) => {
+                const chunk = new Uint8Array(event.data);
+                const currentReq = channelData.queue[0];
+                if (!currentReq) return;
+
+                if (!channelData.currentResponse) {
+                    channelData.currentResponse = {
+                        buffer: [],
+                        headersParsed: false,
+                        contentLength: -1,
+                        bytesReceived: 0
+                    };
+                }
+
+                const respState = channelData.currentResponse;
+
+                console.log("[Page] Received response chunk from DC:", chunk.length, "bytes", "headers parsed:", respState.headersParsed);
+                if (respState.headersParsed) {
+                    currentReq.port.postMessage({ type: 'RESPONSE_CHUNK', chunk }, [chunk.buffer]);
+                    respState.bytesReceived += chunk.length;
+                    checkResponseComplete(channelData);
+                } else {
+                    respState.buffer.push(...chunk);
+                    const endpoint = findDoubleCRLF(respState.buffer);
+                    if (endpoint !== -1) {
+                        const headerBytes = new Uint8Array(respState.buffer.slice(0, endpoint));
+                        const bodyBytes = new Uint8Array(respState.buffer.slice(endpoint + 4));
+                        console.log("[Page] from DC, headerBytes", headerBytes.length, "bodyBytes", bodyBytes.length);
+
+                        const headerStr = new TextDecoder().decode(headerBytes);
+                        const { status, headers } = parseHeaders(headerStr);
+
+                        // Check Content-Length for reuse
+                        const cl = headers.get('content-length');
+                        if (cl) {
+                            respState.contentLength = parseInt(cl, 10);
+                        } else {
+                            // If no Content-Length, we can't reuse this channel reliably for next request
+                            // unless it's chunked (not implemented) or 204/304.
+                            // For safety, mark channel as 'closing' after this request.
+                            channelData.closeAfterRequest = true;
+                        }
+
+                        // Send headers to SW
+                        const headerList = [];
+                        headers.forEach((v, k) => headerList.push([k, v]));
+                        currentReq.port.postMessage({ type: 'RESPONSE_HEAD', status, headers: headerList });
+
+                        respState.headersParsed = true;
+                        if (bodyBytes.length > 0) {
+                            currentReq.port.postMessage({ type: 'RESPONSE_CHUNK', chunk: bodyBytes }, [bodyBytes.buffer]);
+                            respState.bytesReceived += bodyBytes.length;
+                            console.log("[Page] Sent bodyBytes to SW. BytesReceived:", respState.bytesReceived, "bodyBytes:", bodyBytes.length);
+                        }
+                        respState.buffer = []; // Clear buffer
+                        checkResponseComplete(channelData);
+                    }
+                }
+            };
+
+            dc.onclose = () => {
+                const currentReq = channelData.queue[0];
+                if (currentReq) {
+                    currentReq.port.postMessage({ type: 'RESPONSE_END' });
+                    channelData.queue.shift();
+                }
+                channelCache.delete(channelData.serviceName);
+                // If there are more requests in queue, they failed
+                while (channelData.queue.length > 0) {
+                    const req = channelData.queue.shift();
+                    req.port.postMessage({ type: 'ERROR', message: "Channel closed unexpectedly" });
+                }
+            };
+
+            dc.onerror = (e) => {
+                console.error("DC Error", e);
+                dc.close(); // Will trigger onclose
+            };
+        }
+
+        function checkResponseComplete(channelData) {
+            const respState = channelData.currentResponse;
+            console.log("[Page] Checking if DC response is complete", respState.bytesReceived, respState.contentLength);
+            if (respState.contentLength !== -1 && respState.bytesReceived >= respState.contentLength) {
+                // Response Complete
+                finishCurrentRequest(channelData);
+            }
+        }
+
+        function finishCurrentRequest(channelData) {
+            const currentReq = channelData.queue.shift();
+            if (currentReq) {
+                console.log("[Page] DC Response complete, sending RESPONSE_END");
+                currentReq.port.postMessage({ type: 'RESPONSE_END' });
+            }
+            channelData.currentResponse = null;
+            channelData.isRequestInFlight = false;
+
+            if (channelData.closeAfterRequest) {
+                channelData.dc.close();
+            } else {
+                processQueue(channelData);
+            }
+        }
+
+        function processQueue(channelData) {
+            if (channelData.queue.length === 0) return;
+            // If we are already processing a request (currentResponse is set or waiting for headers), wait.
+            if (channelData.currentResponse || channelData.isRequestInFlight) return;
+
+            const req = channelData.queue[0];
+            const dc = channelData.dc;
+
+            try {
+                channelData.isRequestInFlight = true;
+
+                // 2. Send Request Line & Headers
+                const headers = req.reqData.headers.map(h => `${h[0]}: ${h[1]}`);
+                let reqStr = `${req.reqData.method} ${req.url.pathname + req.url.search} ${HTTP_VERSION}\r\n`;
+                reqStr += headers.join('\r\n') + '\r\n\r\n';
+                dc.send(new TextEncoder().encode(reqStr));
+
+                // 3. Send Body
+                if (req.reqData.body) {
+                    dc.send(req.reqData.body);
+                }
+            } catch (e) {
+                console.error("DC Send Error", e);
+                channelData.isRequestInFlight = false;
+                req.port.postMessage({ type: 'ERROR', message: e.toString() });
+                channelData.queue.shift();
+                processQueue(channelData);
             }
         }
 
@@ -243,6 +353,8 @@
                     signal: controller.signal
                 });
 
+                console.log('[Page] Fetched content with status:', response.status);
+
                 if (!response.ok) {
                     throw new Error(`Fetch failed with status ${response.statusText} (${response.status})`);
                 }
@@ -250,6 +362,7 @@
                 const contentType = response.headers.get('content-type') || '';
 
                 if (contentType.includes('text/html')) {
+                    console.log('[Page] Got html content, updating current page');
                     const html = await response.text();
                     const parser = new DOMParser();
                     const newDoc = parser.parseFromString(html, 'text/html');
@@ -279,6 +392,7 @@
                     }
                 } else {
                     // Handle non-HTML content (images, videos, PDFs)
+                    console.log('Got html content, updating in iframe');
                     const contentLength = response.headers.get('content-length');
                     const length = contentLength ? parseInt(contentLength, 10) : -1;
                     let url;
@@ -341,7 +455,9 @@
         window.onload = init;
     </script>
 </head>
+
 <body>
     Bootstrapping peer...
 </body>
+
 </html>
