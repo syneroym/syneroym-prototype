@@ -1,3 +1,3 @@
 pub mod config;
-pub mod stream;
+pub mod iroh_utils;
 pub mod utils;

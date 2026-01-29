@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use common::stream::IrohStream;
+use common::iroh_utils::IrohStream;
 use iroh::{Endpoint, EndpointAddr};
 use protocol_base::SYNEROYM_ALPN;
 use std::net::SocketAddr;
@@ -17,13 +17,13 @@ struct AppState {
     target: NodeId,
 }
 
-pub async fn start(port: u16, target: NodeId) -> anyhow::Result<()> {
+pub async fn start(port: u16, target: NodeId, iroh_relay_url: Option<String>) -> anyhow::Result<()> {
     info!(
         "Starting LocalNode HTTP Proxy on port {}, target: {:?}",
         port, target
     );
 
-    let endpoint = Endpoint::bind().await?;
+    let endpoint = common::iroh_utils::bind_endpoint(iroh_relay_url).await?;
 
     let state = Arc::new(AppState {
         iroh: endpoint,

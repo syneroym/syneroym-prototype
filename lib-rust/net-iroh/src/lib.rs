@@ -1,8 +1,7 @@
 use anyhow::Result;
 use common::config::Config;
-use common::stream::IrohStream;
+use common::iroh_utils::IrohStream;
 use iroh::{
-    Endpoint,
     endpoint::{Connection, RecvStream, SendStream},
     protocol::{AcceptError, ProtocolHandler as IrohProtocolHandler, Router},
 };
@@ -29,7 +28,8 @@ pub async fn init(
             debug!("Using secret key at: {:?}", secret);
         }
 
-        let router = start_accept_side(handlers).await?;
+        let iroh_relay_url = iroh_config.relay_url.clone();
+        let router = start_accept_side(handlers, iroh_relay_url).await?;
 
         info!(
             "Iroh listening on ALPN: {:?}",
@@ -47,8 +47,11 @@ pub async fn init(
 }
 
 // Taken from the Iroh echo example: https://github.com/n0-computer/iroh/blob/main/iroh/examples/echo.rs
-async fn start_accept_side(handlers: Vec<Arc<dyn ProtocolHandler>>) -> Result<Router> {
-    let endpoint = Endpoint::bind().await?;
+async fn start_accept_side(
+    handlers: Vec<Arc<dyn ProtocolHandler>>,
+    iroh_relay_url: Option<String>,
+) -> Result<Router> {
+    let endpoint = common::iroh_utils::bind_endpoint(iroh_relay_url).await?;
 
     // Build our protocol handler and add our protocol, identified by its ALPN, and spawn the endpoint.
     let router = Router::builder(endpoint)

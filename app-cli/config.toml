@@ -4,7 +4,7 @@
 enabled_comms = ["iroh", "webrtc"]
 
 # List of ALPN protocols to register.
-alpn_protocols = ["syneroym/1.0", "http/1.1"]
+alpn_protocols = ["syneroym/1.0"]
 
 # Iroh communication configuration
 # Presence of this section enables Iroh P2P
@@ -22,11 +22,11 @@ alpn_protocols = ["syneroym/1.0", "http/1.1"]
 # Signaling Server configuration
 # This controls the built-in signaling server for WebRTC
 [signaling_server]
-enabled = false
+enabled = true
 # port = 8000
 
 # Peer Gateway configuration
 # This controls the HTTP gateway for accessing peer resources
 [peer_gateway]
-enabled = false
+enabled = true
 # port = 8001

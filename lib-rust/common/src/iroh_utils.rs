@@ -1,4 +1,8 @@
-use iroh::endpoint::{RecvStream, SendStream};
+use anyhow::Result;
+use iroh::{
+    Endpoint, RelayMap, RelayMode, RelayUrl,
+    endpoint::{RecvStream, SendStream},
+};
 use std::pin::Pin;
 use std::task::{self, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -58,4 +62,14 @@ impl AsyncWrite for IrohStream {
             .poll_shutdown(cx)
             .map_err(std::io::Error::other)
     }
+}
+
+pub async fn bind_endpoint(iroh_relay_url: Option<String>) -> Result<Endpoint> {
+    let mut builder = Endpoint::builder();
+    if let Some(url_str) = iroh_relay_url {
+        let url = url_str.parse::<RelayUrl>()?;
+        builder = builder.relay_mode(RelayMode::Custom(RelayMap::from_iter(vec![url])));
+    }
+    let endpoint = builder.bind().await?;
+    Ok(endpoint)
 }

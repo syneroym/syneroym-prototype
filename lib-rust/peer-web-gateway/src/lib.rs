@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use common::stream::IrohStream;
+use common::iroh_utils::IrohStream;
 use futures::{SinkExt, StreamExt};
 use iroh::{Endpoint, EndpointAddr};
 use protocol_base::SYNEROYM_ALPN;
@@ -26,13 +26,18 @@ struct AppState {
     signaling_server_url: String,
 }
 
-pub async fn start(port: u16, target: NodeId, signaling_server_url: String) -> anyhow::Result<()> {
+pub async fn start(
+    port: u16,
+    target: NodeId,
+    signaling_server_url: String,
+    iroh_relay_url: Option<String>,
+) -> anyhow::Result<()> {
     info!(
         "Starting LocalNode Web Gateway on port {}, target: {:?}",
         port, target
     );
 
-    let endpoint = Endpoint::bind().await?;
+    let endpoint = common::iroh_utils::bind_endpoint(iroh_relay_url).await?;
 
     let state = AppState {
         iroh: endpoint,
