@@ -1,40 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LocalNode Gateway</title>
-    <style>
-        body {
-            font-family: sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-
-        .status {
-            padding: 1rem;
-            border-radius: 4px;
-            margin-bottom: 1rem;
-        }
-
-        .success {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .error {
-            background: #f8d7da;
-            color: #721c24;
-        }
-    </style>
-</head>
-
-<body>
-    <h1>LocalNode Gateway</h1>
-    <div id="status"></div>
-    <div id="peer-content"></div>
+    <title>Bootstrapping peer...</title>
     <script>
         const SIGNALING_SERVER_URL = "{{ signaling_server_url }}";
         const TARGET_PEER_ID = "{{ target_peer_id }}";
@@ -47,9 +16,8 @@
         let connectionPromise = null;
 
         async function init() {
-            const status = document.getElementById('status');
             if (!('serviceWorker' in navigator)) {
-                status.innerText = "Service Workers not supported.";
+                document.body.innerText = "Service Workers not supported.";
                 return;
             }
 
@@ -69,8 +37,7 @@
                 // Start WebRTC Connection
                 bootstrap().catch(err => {
                     console.error("WebRTC Bootstrap failed:", err);
-                    status.innerText = "Connection Failed: " + err.message;
-                    status.className = "status error";
+                    document.body.innerText = "Connection Failed: " + err.message;
                 });
 
                 if (navigator.serviceWorker.controller) {
@@ -83,7 +50,7 @@
                 }
             } catch (err) {
                 console.error('[Page] SW Registration Failed:', err);
-                status.innerText = "Initialization Failed.";
+                document.body.innerText = "Initialization Failed.";
             }
         }
 
@@ -123,6 +90,9 @@
 
             peerConnection = new RTCPeerConnection(config);
 
+            // Create a placeholder data channel to ensure the offer includes m=application (SCTP)
+            peerConnection.createDataChannel("_init");
+
             peerConnection.onicecandidate = (event) => {
                 if (event.candidate) {
                     // TODO Vanilla ICE for now
@@ -133,8 +103,7 @@
                 console.log("[Page] Connection State:", peerConnection.connectionState);
                 if (peerConnection.connectionState === 'connected') {
                     isConnected = true;
-                    document.getElementById('status').innerText = "Connected to Peer";
-                    document.getElementById('status').className = "status success";
+                    reloadContent();
                     resolve();
                 }
             };
@@ -266,8 +235,9 @@
 
         async function reloadContent() {
             console.log('[Page] Fetching actual content...');
-            const container = document.getElementById('peer-content');
             try {
+                // Fetch the current URL. The Service Worker should intercept this
+                // and proxy it through the now-established WebRTC connection.
                 const response = await fetch(window.location.href, {
                     headers: { 'X-Peer-Proxy': 'true' }
                 });
@@ -281,40 +251,30 @@
                 const newDoc = parser.parseFromString(html, 'text/html');
 
                 // 1. Merge <head> elements
-                document.title = newDoc.title; // Update title
-
-                // A more sophisticated strategy could be used to avoid duplicates.
-                // For example, checking if a stylesheet with the same href already exists.
+                document.title = newDoc.title;
                 newDoc.head.querySelectorAll('link[rel="stylesheet"], style, meta').forEach(node => {
+                    // avoid duplicating meta charset/viewport if possible, but browsers handle it ok
                     document.head.appendChild(node.cloneNode(true));
                 });
 
-                // 2. Replace body content within our container
-                container.innerHTML = newDoc.body.innerHTML;
+                // 2. Replace body content
+                document.body.innerHTML = newDoc.body.innerHTML;
 
                 // 3. Re-execute scripts from the new body
-                // Scripts inserted via innerHTML do not execute. We must create new script
-                // elements for the browser to run them.
-                const scripts = Array.from(container.querySelectorAll('script'));
+                const scripts = Array.from(document.body.querySelectorAll('script'));
                 for (const oldScript of scripts) {
                     const newScript = document.createElement('script');
-
-                    // Copy all attributes (e.g., src, type, async)
                     for (const attr of oldScript.attributes) {
                         newScript.setAttribute(attr.name, attr.value);
                     }
-
-                    // Copy inline script content
                     if (oldScript.textContent) {
                         newScript.textContent = oldScript.textContent;
                     }
-
-                    // Replace the old script tag with the new one to trigger execution
                     oldScript.parentNode.replaceChild(newScript, oldScript);
                 }
             } catch (err) {
                 console.error('[Page] Content Load Failed:', err);
-                container.innerHTML = `<h1>Connection Failed</h1><p>Failed to load content from peer. ${err.message}</p>`;
+                document.body.innerHTML = `<h3>Connection Failed</h3><p>Failed to load content from peer.</p><p>${err.message}</p>`;
             }
         }
 
@@ -345,8 +305,11 @@
             return { status, headers };
         }
 
-        init();
+        // Initialize on load
+        window.onload = init;
     </script>
+</head>
+<body>
+    Bootstrapping peer...
 </body>
-
 </html>
