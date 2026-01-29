@@ -9,11 +9,13 @@ use tracing::{debug, error, info, warn};
 use webrtc::api::APIBuilder;
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
+use webrtc::api::setting_engine::SettingEngine;
 use webrtc::data_channel::RTCDataChannel;
 use webrtc::interceptor::registry::Registry;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
+use webrtc::ice::mdns::MulticastDnsMode;
 
 // Use the external crate
 
@@ -36,9 +38,14 @@ pub async fn init(config: &Config, handlers: Vec<Arc<dyn ProtocolHandler>>) -> R
         let mut registry = Registry::new();
         registry = register_default_interceptors(registry, &mut m)?;
 
+        let mut s = SettingEngine::default();
+        s.detach_data_channels();
+        s.set_ice_multicast_dns_mode(MulticastDnsMode::Disabled);
+
         let api = APIBuilder::new()
             .with_media_engine(m)
             .with_interceptor_registry(registry)
+            .with_setting_engine(s)
             .build();
 
         let rtc_config = RTCConfiguration {
