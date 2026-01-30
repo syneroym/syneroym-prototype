@@ -128,66 +128,74 @@ async fn connect_signaling(
                         None => continue,
                     };
 
-                    let sender_id = v["sender"].as_str().unwrap_or("unknown");
+                    let sender_id = v["sender"].as_str().unwrap_or("unknown").to_string();
+                    let peer_id = peer_id.clone();
+                    let api = api.clone();
+                    let config = config.clone();
+                    let handlers = handlers.clone();
 
-                    // Create new PeerConnection
-                    let pc = Arc::new(api.new_peer_connection(config.clone()).await?);
+                    // Handle the offer in a separate block to catch errors without breaking the loop
+                    let res = async {
+                        // Create new PeerConnection
+                        let pc = Arc::new(api.new_peer_connection(config.clone()).await?);
 
-                    // TODO: Handle ICE candidates
-                    // In a final app, we would send candidates back to sender_id.
-                    // For now, we skip trickling or assume complete SDP if possible,
-                    // or implement on_ice_candidate -> send via WS.
+                        // Set Data Channel handler
+                        let handlers_clone = handlers.clone();
+                        pc.on_data_channel(Box::new(move |d: Arc<RTCDataChannel>| {
+                            let handlers = handlers_clone.clone();
+                            Box::pin(async move {
+                                handle_data_channel(d, handlers).await;
+                            })
+                        }));
 
-                    // Set Data Channel handler
-                    let handlers_clone = handlers.clone();
-                    pc.on_data_channel(Box::new(move |d: Arc<RTCDataChannel>| {
-                        let handlers = handlers_clone.clone();
-                        Box::pin(async move {
-                            handle_data_channel(d, handlers).await;
-                        })
-                    }));
+                        let pc_clone = pc.clone();
+                        pc.on_peer_connection_state_change(Box::new(
+                            move |s: RTCPeerConnectionState| {
+                                info!("Peer Connection State has changed: {}", s);
+                                if s == RTCPeerConnectionState::Failed
+                                    || s == RTCPeerConnectionState::Disconnected
+                                {
+                                    info!("Peer Connection is {}, closing...", s);
+                                    let pc = pc_clone.clone();
+                                    Box::pin(async move {
+                                        if let Err(e) = pc.close().await {
+                                            error!("Failed to close PeerConnection: {}", e);
+                                        }
+                                    })
+                                } else {
+                                    Box::pin(async {})
+                                }
+                            },
+                        ));
 
-                    let pc_clone = pc.clone();
-                    pc.on_peer_connection_state_change(Box::new(
-                        move |s: RTCPeerConnectionState| {
-                            info!("Peer Connection State has changed: {}", s);
-                            if s == RTCPeerConnectionState::Failed
-                                || s == RTCPeerConnectionState::Disconnected
-                            {
-                                info!("Peer Connection is {}, closing...", s);
-                                let pc = pc_clone.clone();
-                                Box::pin(async move {
-                                    if let Err(e) = pc.close().await {
-                                        error!("Failed to close PeerConnection: {}", e);
-                                    }
-                                })
-                            } else {
-                                Box::pin(async {})
-                            }
-                        },
-                    ));
+                        // Set Remote Description
+                        let desc = RTCSessionDescription::offer(sdp.to_string())?;
+                        pc.set_remote_description(desc).await?;
 
-                    // Set Remote Description
-                    let desc = RTCSessionDescription::offer(sdp.to_string())?;
-                    pc.set_remote_description(desc).await?;
+                        // Create Answer
+                        let answer = pc.create_answer(None).await?;
+                        pc.set_local_description(answer.clone()).await?;
 
-                    // Create Answer
-                    let answer = pc.create_answer(None).await?;
-                    pc.set_local_description(answer.clone()).await?;
+                        // Send Answer back
+                        let answer_msg = serde_json::json!({
+                            "type": "answer",
+                            "target": sender_id,
+                            "sender": peer_id,
+                            "sdp": answer.sdp
+                        });
+                        write
+                            .send(tokio_tungstenite::tungstenite::Message::Text(
+                                answer_msg.to_string().into(),
+                            ))
+                            .await?;
+                        info!("Sent Answer to {}", sender_id);
+                        Ok::<(), anyhow::Error>(())
+                    }
+                    .await;
 
-                    // Send Answer back
-                    let answer_msg = serde_json::json!({
-                        "type": "answer",
-                        "target": sender_id,
-                        "sender": peer_id,
-                        "sdp": answer.sdp
-                    });
-                    write
-                        .send(tokio_tungstenite::tungstenite::Message::Text(
-                            answer_msg.to_string().into(),
-                        ))
-                        .await?;
-                    info!("Sent Answer to {}", sender_id);
+                    if let Err(e) = res {
+                        error!("Failed to handle offer from {}: {:?}", sender_id, e);
+                    }
                 }
                 _ => {
                     debug!("Unhandled signaling message: {}", type_str);

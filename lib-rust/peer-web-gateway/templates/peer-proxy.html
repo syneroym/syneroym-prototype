@@ -77,9 +77,18 @@
                     console.error("[Page] WS Error:", e);
                     reject(e);
                 };
+
+                ws.onclose = () => {
+                    console.log("[Page] WS Closed");
+                };
             });
 
-            return connectionPromise;
+            return connectionPromise.catch(e => {
+                console.error("[Page] Bootstrap failed:", e);
+                connectionPromise = null;
+                isConnected = false;
+                throw e;
+            });
         }
 
         async function startWebRTC(resolve, reject) {
@@ -105,6 +114,9 @@
                     isConnected = true;
                     reloadContent();
                     resolve();
+                } else if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
+                    isConnected = false;
+                    reject(new Error("WebRTC connection state: " + peerConnection.connectionState));
                 }
             };
 
