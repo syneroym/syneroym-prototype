@@ -1,11 +1,12 @@
 use axum::{
     Router,
     extract::{
-        Json, Multipart, Path, State,
+        Json, Multipart, Path, Request, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{StatusCode, Uri, header},
-    response::{Html, IntoResponse},
+    middleware::{self, Next},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
 use clap::Parser;
@@ -279,8 +280,20 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
     }
 }
 
+async fn print_request_log(req: Request, next: Next) -> Response {
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    debug!("-> {} {}", method, uri);
+    let res = next.run(req).await;
+    debug!("<- {} {} status={}", method, uri, res.status());
+    res
+}
+
+use tracing::{debug, info};
+
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
     let args = Args::parse();
 
     std::fs::create_dir_all(&args.data_dir).expect("Failed to create data directory");
@@ -313,11 +326,12 @@ async fn main() {
         .route("/api/files/{filename}", get(download_file))
         .route("/ws", get(websocket_handler))
         .fallback(static_handler)
+        .layer(middleware::from_fn(print_request_log))
         .with_state(state);
 
     // Run it with hyper on localhost
     let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
-    println!("listening on http://{}", addr);
+    info!("listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
