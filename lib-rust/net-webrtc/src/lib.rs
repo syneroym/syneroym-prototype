@@ -11,11 +11,11 @@ use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
 use webrtc::api::setting_engine::SettingEngine;
 use webrtc::data_channel::RTCDataChannel;
+use webrtc::ice::mdns::MulticastDnsMode;
 use webrtc::interceptor::registry::Registry;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
-use webrtc::ice::mdns::MulticastDnsMode;
 
 // Use the external crate
 
@@ -107,6 +107,7 @@ async fn connect_signaling(
                 break;
             }
         };
+        debug!("Received message from signalling {:?}", msg);
 
         if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
             let v: serde_json::Value = match serde_json::from_str(&text) {
@@ -121,7 +122,7 @@ async fn connect_signaling(
 
             match type_str {
                 "offer" => {
-                    info!("Received Offer from {:?}", v["sender"]);
+                    debug!("Received Offer from {:?}", v["sender"]);
                     let sdp = match v["sdp"].as_str() {
                         Some(s) => s,
                         None => continue,
@@ -130,7 +131,7 @@ async fn connect_signaling(
                     let sender_id = v["sender"].as_str().unwrap_or("unknown");
 
                     // Create new PeerConnection
-                    let pc = api.new_peer_connection(config.clone()).await?;
+                    let pc = Arc::new(api.new_peer_connection(config.clone()).await?);
 
                     // TODO: Handle ICE candidates
                     // In a final app, we would send candidates back to sender_id.
@@ -146,13 +147,23 @@ async fn connect_signaling(
                         })
                     }));
 
+                    let pc_clone = pc.clone();
                     pc.on_peer_connection_state_change(Box::new(
                         move |s: RTCPeerConnectionState| {
                             info!("Peer Connection State has changed: {}", s);
-                            if s == RTCPeerConnectionState::Failed {
-                                // TODO cleanup
+                            if s == RTCPeerConnectionState::Failed
+                                || s == RTCPeerConnectionState::Disconnected
+                            {
+                                info!("Peer Connection is {}, closing...", s);
+                                let pc = pc_clone.clone();
+                                Box::pin(async move {
+                                    if let Err(e) = pc.close().await {
+                                        error!("Failed to close PeerConnection: {}", e);
+                                    }
+                                })
+                            } else {
+                                Box::pin(async {})
                             }
-                            Box::pin(async {})
                         },
                     ));
 

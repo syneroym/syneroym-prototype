@@ -15,9 +15,16 @@ self.addEventListener('fetch', (event) => {
     if (url.origin !== self.location.origin) return;
     if (url.searchParams.has('sw')) return;
     if (url.pathname === '/sw.js') return;
+    console.log("[SW] ----- Starting overridden Fetch for", url)
 
     event.respondWith(
         (async () => {
+            // Always serve App Shell for navigation to keep the proxy logic alive
+            if (event.request.mode === 'navigate') {
+                console.log("[SW] Navigation request detected. Serving App Shell.");
+                return fetch(event.request);
+            }
+
             try {
                 // Find a client (window) to handle the WebRTC request
                 const clientsList = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
@@ -71,12 +78,12 @@ async function proxyRequestToClient(client, request) {
 
         channel.port1.onmessage = (event) => {
             const data = event.data;
-            console.log("[SW] Received DC message from client:", data);
+            console.log("[SW] Received DC response from client:", data);
             if (data.type === 'RESPONSE_HEAD') {
                 const stream = new ReadableStream({
                     start(controller) {
                         channel.port1.onmessage = (evt) => {
-                            console.log("[SW] Controller Received DC message from client:", evt);
+                            console.log("[SW] Controller Received DC response from client:", evt);
                             if (evt.data.type === 'RESPONSE_CHUNK') {
                                 controller.enqueue(evt.data.chunk);
                             } else if (evt.data.type === 'RESPONSE_END') {
