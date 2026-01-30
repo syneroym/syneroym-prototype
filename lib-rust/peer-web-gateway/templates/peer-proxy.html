@@ -225,8 +225,9 @@
 
                 console.log("[Page] Received response chunk from DC:", chunk.length, "bytes", "headers parsed:", respState.headersParsed);
                 if (respState.headersParsed) {
+                    const len = chunk.length;
                     currentReq.port.postMessage({ type: 'RESPONSE_CHUNK', chunk }, [chunk.buffer]);
-                    respState.bytesReceived += chunk.length;
+                    respState.bytesReceived += len;
                     checkResponseComplete(channelData);
                 } else {
                     respState.buffer.push(...chunk);
@@ -257,9 +258,10 @@
 
                         respState.headersParsed = true;
                         if (bodyBytes.length > 0) {
+                            const len = bodyBytes.length;
                             currentReq.port.postMessage({ type: 'RESPONSE_CHUNK', chunk: bodyBytes }, [bodyBytes.buffer]);
-                            respState.bytesReceived += bodyBytes.length;
-                            console.log("[Page] Sent bodyBytes to SW. BytesReceived:", respState.bytesReceived, "bodyBytes:", bodyBytes.length);
+                            respState.bytesReceived += len;
+                            console.log("[Page] Sent bodyBytes to SW. BytesReceived:", respState.bytesReceived, "bodyBytes:", len);
                         }
                         respState.buffer = []; // Clear buffer
                         checkResponseComplete(channelData);
@@ -372,7 +374,18 @@
 
                     // Copy all nodes from new head to existing head
                     Array.from(newDoc.head.childNodes).forEach(node => {
-                        document.head.appendChild(node.cloneNode(true));
+                        if (node.tagName === 'SCRIPT') {
+                            const newScript = document.createElement('script');
+                            Array.from(node.attributes).forEach(attr => {
+                                newScript.setAttribute(attr.name, attr.value);
+                            });
+                            if (node.textContent) {
+                                newScript.textContent = node.textContent;
+                            }
+                            document.head.appendChild(newScript);
+                        } else {
+                            document.head.appendChild(node.cloneNode(true));
+                        }
                     });
 
                     // 2. Replace body content
