@@ -182,6 +182,8 @@
                     bytesReceived: 0
                 };
 
+                let useChunkedEncoding = false;
+
                 // Connection Timeout Safety
                 const timeoutId = setTimeout(() => {
                     if (dc.readyState !== 'open' && dc.readyState !== 'closing' && dc.readyState !== 'closed') {
@@ -203,9 +205,20 @@
                     dc.send(preamble);
 
                     // 2. Send Request Headers
-                    const headers = reqData.headers.map(h => `${h[0]}: ${h[1]}`);
+                    const headersMap = new Map(reqData.headers.map(h => [h[0].toLowerCase(), h[1]]));
+                    console.log(`[Page] Request Headers got from SW:\n${reqData.headers}`);
+
+                    if (reqData.hasBody && !headersMap.has('content-length')) {
+                        headersMap.set('transfer-encoding', 'chunked');
+                        useChunkedEncoding = true;
+                    }
+
+                    const headers = [];
+                    headersMap.forEach((v, k) => headers.push(`${k}: ${v}`));
+
                     let reqStr = `${reqData.method} ${url.pathname + url.search} ${HTTP_VERSION}\r\n`;
                     reqStr += headers.join('\r\n') + '\r\n\r\n';
+                    console.log(`[Page] Sending Request Headers:\n${reqStr}`);
                     dc.send(new TextEncoder().encode(reqStr));
 
                     // 3. Signal SW to start streaming body (Backpressure release)
@@ -216,7 +229,7 @@
 
                 dc.onmessage = (event) => {
                     const chunk = new Uint8Array(event.data);
-                    
+
                     if (responseState.headersParsed) {
                         const len = chunk.length;
                         port.postMessage({ type: 'RESPONSE_CHUNK', chunk }, [chunk.buffer]);
@@ -226,32 +239,32 @@
                         responseState.buffer.push(...chunk);
                         const endpoint = findDoubleCRLF(responseState.buffer);
                         if (endpoint !== -1) {
-                             const headerBytes = new Uint8Array(responseState.buffer.slice(0, endpoint));
-                             const bodyBytes = new Uint8Array(responseState.buffer.slice(endpoint + 4));
-                             
-                             const headerStr = new TextDecoder().decode(headerBytes);
-                             const { status, headers } = parseHeaders(headerStr);
-                             
-                             const cl = headers.get('content-length');
-                             if (cl) responseState.contentLength = parseInt(cl, 10);
-                             
-                             // Send Head
-                             const headerList = [];
-                             headers.forEach((v, k) => headerList.push([k, v]));
-                             port.postMessage({ type: 'RESPONSE_HEAD', status, headers: headerList });
-                             
-                             responseState.headersParsed = true;
-                             
-                             if (bodyBytes.length > 0) {
-                                 const len = bodyBytes.length;
-                                 port.postMessage({ type: 'RESPONSE_CHUNK', chunk: bodyBytes }, [bodyBytes.buffer]);
-                                 responseState.bytesReceived += len;
-                             }
-                             responseState.buffer = []; // Clear buffer
-                             checkDone();
+                            const headerBytes = new Uint8Array(responseState.buffer.slice(0, endpoint));
+                            const bodyBytes = new Uint8Array(responseState.buffer.slice(endpoint + 4));
+
+                            const headerStr = new TextDecoder().decode(headerBytes);
+                            const { status, headers } = parseHeaders(headerStr);
+
+                            const cl = headers.get('content-length');
+                            if (cl) responseState.contentLength = parseInt(cl, 10);
+
+                            // Send Head
+                            const headerList = [];
+                            headers.forEach((v, k) => headerList.push([k, v]));
+                            port.postMessage({ type: 'RESPONSE_HEAD', status, headers: headerList });
+
+                            responseState.headersParsed = true;
+
+                            if (bodyBytes.length > 0) {
+                                const len = bodyBytes.length;
+                                port.postMessage({ type: 'RESPONSE_CHUNK', chunk: bodyBytes }, [bodyBytes.buffer]);
+                                responseState.bytesReceived += len;
+                            }
+                            responseState.buffer = []; // Clear buffer
+                            checkDone();
                         }
                     }
-                    
+
                     function checkDone() {
                         if (responseState.contentLength !== -1 && responseState.bytesReceived >= responseState.contentLength) {
                             port.postMessage({ type: 'RESPONSE_END' });
@@ -265,11 +278,11 @@
                     port.postMessage({ type: 'ERROR', message: "DataChannel Error" });
                     dc.close();
                 };
-                
+
                 dc.onclose = () => {
                     // console.log("[Page] DC Closed", dcLabel);
                     // Ensure the client knows we are done, even if abrupt
-                    port.postMessage({ type: 'RESPONSE_END' }); 
+                    port.postMessage({ type: 'RESPONSE_END' });
                 };
 
                 // Handle Request Body chunks from SW
@@ -278,11 +291,28 @@
                     if (msg.type === 'REQ_BODY_CHUNK') {
                         // We only get these after we sent REQ_BODY_START, so DC should be open.
                         if (dc.readyState === 'open') {
-                             dc.send(msg.chunk);
+                            if (useChunkedEncoding) {
+                                const len = msg.chunk.byteLength.toString(16);
+                                dc.send(new TextEncoder().encode(`${len}\r\n`));
+                                dc.send(msg.chunk);
+                                dc.send(new TextEncoder().encode('\r\n'));
+                            } else {
+                                dc.send(msg.chunk);
+                            }
                         }
                     } else if (msg.type === 'REQ_BODY_END') {
                         if (msg.chunk && dc.readyState === 'open') {
-                             dc.send(msg.chunk);
+                            if (useChunkedEncoding) {
+                                const len = msg.chunk.byteLength.toString(16);
+                                dc.send(new TextEncoder().encode(`${len}\r\n`));
+                                dc.send(msg.chunk);
+                                dc.send(new TextEncoder().encode('\r\n'));
+                            } else {
+                                dc.send(msg.chunk);
+                            }
+                        }
+                        if (useChunkedEncoding && dc.readyState === 'open') {
+                            dc.send(new TextEncoder().encode('0\r\n\r\n'));
                         }
                         // Request sent completely.
                     }

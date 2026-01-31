@@ -15,7 +15,7 @@ self.addEventListener('fetch', (event) => {
     if (url.origin !== self.location.origin) return;
     if (url.searchParams.has('sw')) return;
     if (url.pathname === '/sw.js') return;
-    console.log("[SW] ----- Starting overridden Fetch for", url)
+    console.log("[SW] ----- Starting overridden Fetch for", event)
 
     event.respondWith(
         (async () => {
@@ -69,10 +69,11 @@ async function proxyRequestToClient(client, request) {
 
         channel.port1.onmessage = (event) => {
             const data = event.data;
-            // console.log("[SW] Received msg from client:", data.type); 
-            
+
             if (data.type === 'REQ_BODY_START') {
+                console.log("[SW] Received msg REQ_BODY_START from client");
                 if (request.body) {
+                    console.log("[SW] and request has body:", request.body);
                     const reader = request.body.getReader();
                     (async () => {
                         try {
@@ -94,7 +95,7 @@ async function proxyRequestToClient(client, request) {
                         }
                     })();
                 } else {
-                     channel.port1.postMessage({ type: 'REQ_BODY_END' });
+                    channel.port1.postMessage({ type: 'REQ_BODY_END' });
                 }
             } else if (data.type === 'RESPONSE_HEAD') {
                 const stream = new ReadableStream({
@@ -102,17 +103,17 @@ async function proxyRequestToClient(client, request) {
                         // We need to listen to messages for chunks now.
                         // Since we are inside the onmessage handler, we need to handle future messages here
                         // OR (better) we update the main handler to dispatch to the controller.
-                        
+
                         // Actually, purely defining the stream here is tricky because we lose the 'onmessage' scope.
                         // Let's attach the controller to a shared variable or update the handler.
                         channel.port1.onmessage = (evt) => {
-                             const d = evt.data;
-                             if (d.type === 'RESPONSE_CHUNK') {
-                                 controller.enqueue(d.chunk);
-                             } else if (d.type === 'RESPONSE_END') {
-                                 controller.close();
-                                 channel.port1.close();
-                             }
+                            const d = evt.data;
+                            if (d.type === 'RESPONSE_CHUNK') {
+                                controller.enqueue(d.chunk);
+                            } else if (d.type === 'RESPONSE_END') {
+                                controller.close();
+                                channel.port1.close();
+                            }
                         };
                     }
                 });
@@ -125,3 +126,4 @@ async function proxyRequestToClient(client, request) {
         client.postMessage(msg, [channel.port2]);
     });
 }
+
