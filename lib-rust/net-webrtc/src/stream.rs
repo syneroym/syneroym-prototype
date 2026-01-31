@@ -37,7 +37,7 @@ impl WebRTCStream {
                                 debug!("WebRTCStream bridge: failed to write to duplex: {}", e);
                                 break;
                             }
-                        },
+                        }
                         Err(e) => {
                             error!("WebRTCStream bridge: WebRTC read error: {}", e);
                             break;
@@ -60,7 +60,7 @@ impl WebRTCStream {
                                 error!("WebRTCStream bridge: WebRTC write error: {}", e);
                                 break;
                             }
-                        },
+                        }
                         Err(e) => {
                             debug!("WebRTCStream bridge: duplex read error: {}", e);
                             break;
@@ -70,11 +70,11 @@ impl WebRTCStream {
             });
 
             // Wait for both to finish (or one to fail/close, depending on desired semantics)
-            // Usually, if one side closes, we might want to tear down the other, 
+            // Usually, if one side closes, we might want to tear down the other,
             // but keeping them independent allows half-open connections if supported.
             // For simplicity here, we just await both.
             let _ = tokio::join!(inbound, outbound);
-            
+
             debug!("WebRTCStream bridge tasks finished");
         });
 

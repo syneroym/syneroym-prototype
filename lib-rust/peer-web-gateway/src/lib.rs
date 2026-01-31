@@ -144,8 +144,16 @@ async fn handle_socket(socket: WebSocket, state: AppState, host: String) {
 
     match state.iroh.connect(state.target, SYNEROYM_ALPN).await {
         Ok(connection) => {
+            debug!(
+                "Connected successfully to Iroh target for service: {}",
+                svc_name
+            );
             match connection.open_bi().await {
                 Ok((send, recv)) => {
+                    debug!(
+                        "Successfully opened bi stream to Iroh target for service: {}",
+                        svc_name
+                    );
                     let svc_raw = svc_name.as_bytes();
                     let mut iroh_stream = IrohStream::new(send, recv);
 
