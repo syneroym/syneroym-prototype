@@ -1,11 +1,13 @@
 use anyhow::{Result, anyhow};
 use askama::Template;
 use common::iroh_utils::IrohStream;
+use common::protocol_utils::{
+    extract_host_from_http, extract_service_from_host, extract_sni, is_tls_client_hello,
+};
 use iroh::{Endpoint, EndpointAddr};
 use protocol_base::SYNEROYM_ALPN;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tls_parser::{TlsMessage, TlsMessageHandshake, parse_tls_plaintext};
 use tokio::io::{self, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{debug, error, info};
@@ -96,7 +98,7 @@ async fn handle_connection(mut client: TcpStream, state: Arc<AppState>) -> Resul
             return tunnel_to_iroh(client, &host, state).await;
         }
 
-        if path == "/sw.js" {
+        if path == "/__syneroym/sw.js" {
             // Serve Service Worker
             return serve_sw(client).await;
         }
@@ -196,34 +198,6 @@ async fn tunnel_to_iroh(mut client: TcpStream, hostname: &str, state: Arc<AppSta
 
 // Helpers
 
-fn is_tls_client_hello(buf: &[u8]) -> bool {
-    buf.len() >= 3 && buf[0] == 0x16 && buf[1] == 0x03
-}
-
-fn extract_sni(buf: &[u8]) -> Result<String> {
-    let (_, tls_record) =
-        parse_tls_plaintext(buf).map_err(|e| anyhow!("Failed to parse TLS: {:?}", e))?;
-
-    for msg in tls_record.msg {
-        if let TlsMessage::Handshake(TlsMessageHandshake::ClientHello(client_hello)) = msg {
-            if let Some(ext_bytes) = client_hello.ext {
-                if let Ok((_, extensions)) = tls_parser::parse_tls_extensions(ext_bytes) {
-                    for ext in extensions {
-                        if let tls_parser::TlsExtension::SNI(sni_list) = ext {
-                            if !sni_list.is_empty() {
-                                let hostname = std::str::from_utf8(sni_list[0].1)
-                                    .map_err(|e| anyhow!("Invalid SNI: {}", e))?;
-                                return Ok(hostname.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    Err(anyhow!("No SNI found"))
-}
-
 fn parse_http_peek(buf: &[u8]) -> Result<(String, String, String, bool, bool)> {
     let text = String::from_utf8_lossy(buf);
     let mut lines = text.lines();
@@ -263,31 +237,10 @@ fn parse_http_peek(buf: &[u8]) -> Result<(String, String, String, bool, bool)> {
     Ok((method, path, host, has_loop, is_websocket))
 }
 
-fn extract_host_from_http(buf: &[u8]) -> Result<String> {
-    let text = String::from_utf8_lossy(buf);
-    for line in text.lines() {
-        if line.len() > 5 && line[..5].eq_ignore_ascii_case("host:") {
-            let h = line[5..].trim();
-            return Ok(h.split(':').next().unwrap_or(h).to_string());
-        }
-    }
-    Err(anyhow!("No Host header"))
-}
-
 fn extract_peer_id_from_host(host: &str) -> String {
     let hostname = host.split(':').next().unwrap_or(host);
     match hostname.split_once('.') {
         Some((_, rest)) => rest.to_string(),
         None => hostname.to_string(),
-    }
-}
-
-fn extract_service_from_host(host: &str) -> Result<String> {
-    let hostname = host.split(':').next().unwrap_or(host);
-    let parts: Vec<&str> = hostname.split('.').collect();
-    if parts.len() > 1 {
-        Ok(parts[0].to_string())
-    } else {
-        Err(anyhow!("service name not found in host: {}", host))
     }
 }

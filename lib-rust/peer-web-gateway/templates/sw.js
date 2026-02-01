@@ -1,12 +1,12 @@
 // Service Worker Logic
 
 self.addEventListener('install', (event) => {
-    console.log('[SW] Installing');
+    console.debug('[SW] Installing');
     self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-    console.log('[SW] Activating');
+    console.debug('[SW] Activating');
     event.waitUntil(clients.claim());
 });
 
@@ -14,14 +14,14 @@ self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
     if (url.origin !== self.location.origin) return;
     if (url.searchParams.has('sw')) return;
-    if (url.pathname === '/sw.js') return;
-    console.log("[SW] ----- Starting overridden Fetch for", event)
+    if (url.pathname === '/__syneroym/sw.js') return;
+    console.debug("[SW] ----- Starting overridden Fetch for", event)
 
     event.respondWith(
         (async () => {
             // Always serve App Shell for navigation to keep the proxy logic alive
             if (event.request.mode === 'navigate') {
-                console.log("[SW] Navigation request detected. Serving App Shell.");
+                console.debug("[SW] Navigation request detected. Serving App Shell.");
                 return fetch(event.request);
             }
 
@@ -71,9 +71,9 @@ async function proxyRequestToClient(client, request) {
             const data = event.data;
 
             if (data.type === 'REQ_BODY_START') {
-                console.log("[SW] Received msg REQ_BODY_START from client");
+                console.debug("[SW] Received msg REQ_BODY_START from client");
                 if (request.body) {
-                    console.log("[SW] and request has body:", request.body);
+                    console.debug("[SW] and request has body:", request.body);
                     const reader = request.body.getReader();
                     (async () => {
                         try {

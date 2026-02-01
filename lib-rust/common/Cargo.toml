@@ -13,6 +13,7 @@ async-trait = "0.1.89"
 iroh = "0.95"
 tokio.workspace = true
 tracing.workspace = true
+tls-parser = "0.12.2"
 
 [dev-dependencies]
 divan = "0.1"

@@ -31,8 +31,8 @@
 
             try {
                 // Register the Service Worker
-                const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-                console.log('[Page] SW Registered:', reg.scope);
+                const reg = await navigator.serviceWorker.register('/__syneroym/sw.js', { scope: '/' });
+                console.debug('[Page] SW Registered:', reg.scope);
 
                 // Start WebRTC Connection
                 bootstrap().catch(err => {
@@ -41,11 +41,11 @@
                 });
 
                 if (navigator.serviceWorker.controller) {
-                    console.log('[Page] SW already controlling.');
+                    console.debug('[Page] SW already controlling.');
                 } else {
-                    console.log('[Page] Waiting for SW control...');
+                    console.debug('[Page] Waiting for SW control...');
                     navigator.serviceWorker.addEventListener('controllerchange', () => {
-                        console.log('[Page] SW took control.');
+                        console.debug('[Page] SW took control.');
                     });
                 }
             } catch (err) {
@@ -59,11 +59,11 @@
             if (connectionPromise) return connectionPromise;
 
             connectionPromise = new Promise((resolve, reject) => {
-                console.log("[Page] Connecting to Signaling Server:", SIGNALING_SERVER_URL);
+                console.debug("[Page] Connecting to Signaling Server:", SIGNALING_SERVER_URL);
                 ws = new WebSocket(SIGNALING_SERVER_URL);
 
                 ws.onopen = () => {
-                    console.log("[Page] WS Open. Registering as:", MY_ID);
+                    console.debug("[Page] WS Open. Registering as:", MY_ID);
                     ws.send(JSON.stringify({ type: "register", id: MY_ID }));
                     startWebRTC(resolve, reject);
                 };
@@ -79,7 +79,7 @@
                 };
 
                 ws.onclose = () => {
-                    console.log("[Page] WS Closed");
+                    console.debug("[Page] WS Closed");
                 };
             });
 
@@ -92,7 +92,7 @@
         }
 
         async function startWebRTC(resolve, reject) {
-            console.log("[Page] Starting WebRTC...");
+            console.debug("[Page] Starting WebRTC...");
             const config = {
                 iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
             };
@@ -109,7 +109,7 @@
             };
 
             peerConnection.onconnectionstatechange = () => {
-                console.log("[Page] Connection State:", peerConnection.connectionState);
+                console.debug("[Page] Connection State:", peerConnection.connectionState);
                 if (peerConnection.connectionState === 'connected') {
                     isConnected = true;
                     reloadContent();
@@ -135,7 +135,7 @@
                 });
             }
 
-            console.log("[Page] Sending Offer to:", TARGET_PEER_ID);
+            console.debug("[Page] Sending Offer to:", TARGET_PEER_ID);
             ws.send(JSON.stringify({
                 type: "offer",
                 target: TARGET_PEER_ID,
@@ -169,7 +169,7 @@
                 const parts = hostname.split('.');
                 let serviceName = parts.length > 0 ? parts[0] : "default";
 
-                console.log(`[Page] Proxying ${reqData.method} ${url.pathname} to ${serviceName}`);
+                console.debug(`[Page] Proxying ${reqData.method} ${url.pathname} to ${serviceName}`);
 
                 // Create a dedicated DataChannel for this request
                 const dcLabel = "req-" + Math.random().toString(36).substr(2, 5);
@@ -195,7 +195,7 @@
 
                 dc.onopen = () => {
                     clearTimeout(timeoutId);
-                    // console.log("[Page] DC Open:", dcLabel);
+                    console.debug("[Page] DC Open:", dcLabel);
 
                     // 1. Send Preamble (Service Name)
                     const serviceBytes = new TextEncoder().encode(serviceName);
@@ -206,7 +206,7 @@
 
                     // 2. Send Request Headers
                     const headersMap = new Map(reqData.headers.map(h => [h[0].toLowerCase(), h[1]]));
-                    console.log(`[Page] Request Headers got from SW:\n${reqData.headers}`);
+                    console.debug(`[Page] Request Headers got from SW:\n${reqData.headers}`);
 
                     if (reqData.hasBody && !headersMap.has('content-length')) {
                         headersMap.set('transfer-encoding', 'chunked');
@@ -218,7 +218,7 @@
 
                     let reqStr = `${reqData.method} ${url.pathname + url.search} ${HTTP_VERSION}\r\n`;
                     reqStr += headers.join('\r\n') + '\r\n\r\n';
-                    console.log(`[Page] Sending Request Headers:\n${reqStr}`);
+                    console.debug(`[Page] Sending Request Headers:\n${reqStr}`);
                     dc.send(new TextEncoder().encode(reqStr));
 
                     // 3. Signal SW to start streaming body (Backpressure release)
@@ -280,7 +280,7 @@
                 };
 
                 dc.onclose = () => {
-                    // console.log("[Page] DC Closed", dcLabel);
+                    console.debug("[Page] DC Closed", dcLabel);
                     // Ensure the client knows we are done, even if abrupt
                     port.postMessage({ type: 'RESPONSE_END' });
                 };
@@ -325,7 +325,7 @@
         }
 
         async function reloadContent() {
-            console.log('[Page] Fetching actual content...');
+            console.debug('[Page] Fetching actual content...');
             const controller = new AbortController();
             try {
                 // Fetch the current URL. The Service Worker should intercept this
@@ -335,7 +335,7 @@
                     signal: controller.signal
                 });
 
-                console.log('[Page] Fetched content with status:', response.status);
+                console.debug('[Page] Fetched content with status:', response.status);
 
                 if (!response.ok) {
                     throw new Error(`Fetch failed with status ${response.statusText} (${response.status})`);
@@ -344,7 +344,7 @@
                 const contentType = response.headers.get('content-type') || '';
 
                 if (contentType.includes('text/html')) {
-                    console.log('[Page] Got html content, updating current page');
+                    console.debug('[Page] Got html content, updating current page');
                     const html = await response.text();
                     const parser = new DOMParser();
                     const newDoc = parser.parseFromString(html, 'text/html');
@@ -385,7 +385,7 @@
                     }
                 } else {
                     // Handle non-HTML content (images, videos, PDFs)
-                    console.log('Got html content, updating in iframe');
+                    console.debug('Got html content, updating in iframe');
                     const contentLength = response.headers.get('content-length');
                     const length = contentLength ? parseInt(contentLength, 10) : -1;
                     let url;
