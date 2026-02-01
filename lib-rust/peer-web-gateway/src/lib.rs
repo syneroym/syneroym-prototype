@@ -1,62 +1,20 @@
+use anyhow::{Result, anyhow};
 use askama::Template;
-use axum::{
-    Router,
-    extract::{
-        Host, State,
-        ws::{Message, WebSocket, WebSocketUpgrade},
-    },
-    http::{HeaderMap, StatusCode, header},
-    response::{IntoResponse, Response},
-    routing::get,
-};
 use common::iroh_utils::IrohStream;
-use futures::{SinkExt, StreamExt};
 use iroh::{Endpoint, EndpointAddr};
 use protocol_base::SYNEROYM_ALPN;
 use std::net::SocketAddr;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::sync::Arc;
+use tls_parser::{TlsMessage, TlsMessageHandshake, parse_tls_plaintext};
+use tokio::io::{self, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tracing::{debug, error, info};
-
-type NodeId = EndpointAddr;
 
 #[derive(Clone)]
 struct AppState {
     iroh: Endpoint,
-    target: NodeId,
+    target: EndpointAddr,
     signaling_server_url: String,
-}
-
-pub async fn start(
-    port: u16,
-    target: NodeId,
-    signaling_server_url: String,
-    iroh_relay_url: Option<String>,
-) -> anyhow::Result<()> {
-    info!(
-        "Starting LocalNode Web Gateway on port {}, target: {:?}",
-        port, target
-    );
-
-    let endpoint = common::iroh_utils::bind_endpoint(iroh_relay_url).await?;
-
-    let state = AppState {
-        iroh: endpoint,
-        target,
-        signaling_server_url,
-    };
-
-    let app = Router::new()
-        .route("/sw.js", get(sw_handler))
-        .fallback(index_handler)
-        .with_state(state);
-
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    info!("LocalNode Web Gateway listening on {}", addr);
-
-    axum::serve(listener, app).await?;
-
-    Ok(())
 }
 
 #[derive(Template)]
@@ -71,30 +29,101 @@ struct PeerProxyTemplate<'a> {
 #[template(path = "sw.js", escape = "none")]
 struct SwTemplate;
 
-async fn index_handler(
-    State(state): State<AppState>,
-    ws: Option<WebSocketUpgrade>,
-    Host(host): Host,
-    headers: HeaderMap,
-) -> Response {
-    debug!("Received index request for host: {}", host);
+pub async fn start(
+    port: u16,
+    target: EndpointAddr,
+    signaling_server_url: String,
+    iroh_relay_url: Option<String>,
+) -> Result<()> {
+    info!(
+        "Starting LocalNode Web Gateway on port {}, target: {:?}",
+        port, target
+    );
 
-    // Loop Protection
-    if headers.contains_key("X-Peer-Proxy") {
-        return (
-            StatusCode::BAD_GATEWAY,
-            "Error: Request reached gateway server. Service Worker failed to intercept.",
-        )
-            .into_response();
+    let endpoint = common::iroh_utils::bind_endpoint(iroh_relay_url).await?;
+
+    let state = Arc::new(AppState {
+        iroh: endpoint,
+        target,
+        signaling_server_url,
+    });
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let listener = TcpListener::bind(addr).await?;
+    info!("LocalNode Web Gateway listening on {}", addr);
+
+    loop {
+        let (client, addr) = listener.accept().await?;
+        debug!("New connection from: {}", addr);
+        let state = state.clone();
+        tokio::spawn(async move {
+            if let Err(e) = handle_connection(client, state).await {
+                debug!("Connection error: {}", e);
+            }
+        });
+    }
+}
+
+async fn handle_connection(mut client: TcpStream, state: Arc<AppState>) -> Result<()> {
+    let mut peek_buf = vec![0u8; 4096];
+    let n = client.peek(&mut peek_buf).await?;
+    if n == 0 {
+        return Ok(());
     }
 
-    if let Some(ws) = ws {
-        debug!("Upgrading to WebSocket for host: {}", host);
-        return ws.on_upgrade(move |socket| handle_socket(socket, state, host));
+    // 1. Try TLS
+    if is_tls_client_hello(&peek_buf[..n]) {
+        debug!("Detected TLS connection");
+        let hostname = extract_sni(&peek_buf[..n])?;
+        return tunnel_to_iroh(client, &hostname, state).await;
     }
 
-    let peer_id = extract_peer_id_from_host(&host);
+    // 2. Try HTTP
+    let http_info = parse_http_peek(&peek_buf[..n]);
 
+    if let Ok((_method, path, host, has_loop_header, is_websocket)) = http_info {
+        // debug!("Detected HTTP: {} {} (Host: {}, WS: {})", _method, path, host, is_websocket);
+
+        if has_loop_header {
+            let resp = "HTTP/1.1 502 Bad Gateway\r\nX-Peer-Proxy-Error: Loop Detected\r\nContent-Length: 13\r\n\r\nLoop Detected";
+            client.write_all(resp.as_bytes()).await?;
+            return Ok(());
+        }
+
+        if is_websocket {
+            // Tunnel WebSockets
+            debug!("Tunneling WebSocket request for host: {}", host);
+            return tunnel_to_iroh(client, &host, state).await;
+        }
+
+        if path == "/sw.js" {
+            // Serve Service Worker
+            return serve_sw(client).await;
+        }
+
+        // For all other requests (Navigation or otherwise), serve the index shell
+        // This allows the Service Worker to take over via the shell.
+        return serve_index(client, &host, state).await;
+    }
+
+    // 3. Fallback: just try to extract host (maybe it was partial HTTP or something)
+    // or fail.
+    match extract_host_from_http(&peek_buf[..n]) {
+        Ok(host) => {
+            debug!("Fallback: Extracted host {}, tunneling", host);
+            tunnel_to_iroh(client, &host, state).await
+        }
+        Err(_) => {
+            // Could not identify protocol or host
+            Err(anyhow!(
+                "Could not identify protocol or host from peeked data"
+            ))
+        }
+    }
+}
+
+async fn serve_index(mut client: TcpStream, host: &str, state: Arc<AppState>) -> Result<()> {
+    let peer_id = extract_peer_id_from_host(host);
     let template = PeerProxyTemplate {
         signaling_server_url: &state.signaling_server_url,
         target_peer_id: &peer_id,
@@ -102,127 +131,147 @@ async fn index_handler(
     };
 
     match template.render() {
-        Ok(content) => Response::builder()
-            .header(header::CONTENT_TYPE, "text/html")
-            .body(content.into())
-            .unwrap(),
-        Err(e) => {
-            tracing::error!("Index template rendering failed: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
-        }
-    }
-}
-
-async fn sw_handler(State(_state): State<AppState>) -> Response {
-    debug!("Received SW request");
-
-    let template = SwTemplate;
-
-    match template.render() {
-        Ok(content) => Response::builder()
-            .header(header::CONTENT_TYPE, "application/javascript")
-            .header("Service-Worker-Allowed", "/")
-            .body(content.into())
-            .unwrap(),
-        Err(e) => {
-            tracing::error!("SW template rendering failed: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
-        }
-    }
-}
-
-async fn handle_socket(socket: WebSocket, state: AppState, host: String) {
-    let svc_name = match extract_service_from_host(&host) {
-        Ok(s) => s,
-        Err(e) => {
-            error!("Failed to extract service name: {}", e);
-            return;
-        }
-    };
-
-    debug!("Connecting to Iroh target for service: {}", svc_name);
-
-    match state.iroh.connect(state.target, SYNEROYM_ALPN).await {
-        Ok(connection) => {
-            debug!(
-                "Connected successfully to Iroh target for service: {}",
-                svc_name
+        Ok(content) => {
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{}",
+                content.len(),
+                content
             );
-            match connection.open_bi().await {
-                Ok((send, recv)) => {
-                    debug!(
-                        "Successfully opened bi stream to Iroh target for service: {}",
-                        svc_name
-                    );
-                    let svc_raw = svc_name.as_bytes();
-                    let mut iroh_stream = IrohStream::new(send, recv);
+            client.write_all(response.as_bytes()).await?;
+        }
+        Err(e) => {
+            error!("Template render error: {}", e);
+            let resp = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
+            client.write_all(resp.as_bytes()).await?;
+        }
+    }
+    Ok(())
+}
 
-                    // Handshake
-                    if let Err(e) = iroh_stream.write_u8(svc_raw.len() as u8).await {
-                        error!("Failed to write service len: {}", e);
-                        return;
-                    }
-                    if let Err(e) = iroh_stream.write_all(svc_raw).await {
-                        error!("Failed to write service name: {}", e);
-                        return;
-                    }
+async fn serve_sw(mut client: TcpStream) -> Result<()> {
+    let template = SwTemplate;
+    match template.render() {
+        Ok(content) => {
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nService-Worker-Allowed: /\r\nContent-Length: {}\r\n\r\n{}",
+                content.len(),
+                content
+            );
+            client.write_all(response.as_bytes()).await?;
+        }
+        Err(e) => {
+            error!("Template render error: {}", e);
+            let resp = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
+            client.write_all(resp.as_bytes()).await?;
+        }
+    }
+    Ok(())
+}
 
-                    // Proxy loop
-                    let (mut sender, mut receiver) = socket.split();
-                    let (mut iroh_reader, mut iroh_writer) = tokio::io::split(iroh_stream);
+async fn tunnel_to_iroh(mut client: TcpStream, hostname: &str, state: Arc<AppState>) -> Result<()> {
+    let svc_name = extract_service_from_host(hostname)?;
+    debug!("Tunneling to service: {}", svc_name);
 
-                    let iroh_to_ws = async {
-                        let mut buf = [0u8; 4096];
-                        loop {
-                            match iroh_reader.read(&mut buf).await {
-                                Ok(0) => break, // EOF
-                                Ok(n) => {
-                                    if sender
-                                        .send(Message::Binary(buf[..n].to_vec()))
-                                        .await
-                                        .is_err()
-                                    {
-                                        break;
-                                    }
-                                }
-                                Err(e) => {
-                                    error!("Error reading from Iroh: {}", e);
-                                    break;
-                                }
+    // Connect to Iroh
+    let connection = state
+        .iroh
+        .connect(state.target.clone(), SYNEROYM_ALPN)
+        .await?;
+    let (send, recv) = connection.open_bi().await?;
+
+    // Handshake
+    let svc_raw = svc_name.as_bytes();
+    let mut iroh_stream = IrohStream::new(send, recv);
+    iroh_stream.write_u8(svc_raw.len() as u8).await?;
+    iroh_stream.write_all(svc_raw).await?;
+
+    // Proxy
+    let (c2s, s2c) = io::copy_bidirectional(&mut client, &mut iroh_stream).await?;
+    debug!(
+        "Tunnel finished: client->server={}, server->client={}",
+        c2s, s2c
+    );
+    Ok(())
+}
+
+// Helpers
+
+fn is_tls_client_hello(buf: &[u8]) -> bool {
+    buf.len() >= 3 && buf[0] == 0x16 && buf[1] == 0x03
+}
+
+fn extract_sni(buf: &[u8]) -> Result<String> {
+    let (_, tls_record) =
+        parse_tls_plaintext(buf).map_err(|e| anyhow!("Failed to parse TLS: {:?}", e))?;
+
+    for msg in tls_record.msg {
+        if let TlsMessage::Handshake(TlsMessageHandshake::ClientHello(client_hello)) = msg {
+            if let Some(ext_bytes) = client_hello.ext {
+                if let Ok((_, extensions)) = tls_parser::parse_tls_extensions(ext_bytes) {
+                    for ext in extensions {
+                        if let tls_parser::TlsExtension::SNI(sni_list) = ext {
+                            if !sni_list.is_empty() {
+                                let hostname = std::str::from_utf8(sni_list[0].1)
+                                    .map_err(|e| anyhow!("Invalid SNI: {}", e))?;
+                                return Ok(hostname.to_string());
                             }
                         }
-                    };
-
-                    let ws_to_iroh = async {
-                        while let Some(msg) = receiver.next().await {
-                            match msg {
-                                Ok(Message::Binary(data)) => {
-                                    if iroh_writer.write_all(&data).await.is_err() {
-                                        break;
-                                    }
-                                }
-                                Ok(Message::Text(text)) => {
-                                    if iroh_writer.write_all(text.as_bytes()).await.is_err() {
-                                        break;
-                                    }
-                                }
-                                Ok(Message::Close(_)) => break,
-                                _ => {} // Ping/Pong
-                            }
-                        }
-                    };
-
-                    tokio::select! {
-                        _ = iroh_to_ws => {},
-                        _ = ws_to_iroh => {},
                     }
-                    debug!("Proxy connection closed for {}", svc_name);
                 }
-                Err(e) => error!("Failed to open bi stream: {}", e),
             }
         }
-        Err(e) => error!("Failed to connect to iroh target: {}", e),
     }
+    Err(anyhow!("No SNI found"))
+}
+
+fn parse_http_peek(buf: &[u8]) -> Result<(String, String, String, bool, bool)> {
+    let text = String::from_utf8_lossy(buf);
+    let mut lines = text.lines();
+
+    // Request line
+    let req_line = lines.next().ok_or_else(|| anyhow!("Empty request"))?;
+    let parts: Vec<&str> = req_line.split_whitespace().collect();
+    if parts.len() < 2 {
+        return Err(anyhow!("Invalid request line"));
+    }
+    let method = parts[0].to_string();
+    let path = parts[1].to_string();
+
+    let mut host = String::new();
+    let mut has_loop = false;
+    let mut is_websocket = false;
+
+    for line in lines {
+        if line.len() > 5 && line[..5].eq_ignore_ascii_case("host:") {
+            let h = line[5..].trim();
+            host = h.split(':').next().unwrap_or(h).to_string();
+        } else if line.len() > 12 && line[..12].eq_ignore_ascii_case("x-peer-proxy") {
+            has_loop = true;
+        } else if line.len() > 8 && line[..8].eq_ignore_ascii_case("upgrade:") {
+            let val = line[8..].trim();
+            if val.eq_ignore_ascii_case("websocket") {
+                is_websocket = true;
+            }
+        }
+        // Break on empty line? Not strictly necessary for peek parsing
+    }
+
+    if host.is_empty() {
+        return Err(anyhow!("No Host header"));
+    }
+
+    Ok((method, path, host, has_loop, is_websocket))
+}
+
+fn extract_host_from_http(buf: &[u8]) -> Result<String> {
+    let text = String::from_utf8_lossy(buf);
+    for line in text.lines() {
+        if line.len() > 5 && line[..5].eq_ignore_ascii_case("host:") {
+            let h = line[5..].trim();
+            return Ok(h.split(':').next().unwrap_or(h).to_string());
+        }
+    }
+    Err(anyhow!("No Host header"))
 }
 
 fn extract_peer_id_from_host(host: &str) -> String {
@@ -233,12 +282,12 @@ fn extract_peer_id_from_host(host: &str) -> String {
     }
 }
 
-fn extract_service_from_host(host: &str) -> anyhow::Result<String> {
+fn extract_service_from_host(host: &str) -> Result<String> {
     let hostname = host.split(':').next().unwrap_or(host);
     let parts: Vec<&str> = hostname.split('.').collect();
     if parts.len() > 1 {
         Ok(parts[0].to_string())
     } else {
-        anyhow::bail!("service name not found in host: {}", host)
+        Err(anyhow!("service name not found in host: {}", host))
     }
 }

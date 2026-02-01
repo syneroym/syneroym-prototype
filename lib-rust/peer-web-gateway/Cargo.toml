@@ -10,6 +10,8 @@ anyhow.workspace = true
 axum = { version = "0.7", features = ["ws"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["fs", "trace", "cors"] }
+http-body-util = "0.1"
+tls-parser = "0.12"
 askama = "0.12"
 askama_axum = "0.4"
 iroh = "0.95"
