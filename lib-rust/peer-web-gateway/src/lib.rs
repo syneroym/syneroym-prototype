@@ -77,7 +77,7 @@ async fn handle_connection(mut client: TcpStream, state: Arc<AppState>) -> Resul
     if is_tls_client_hello(&peek_buf[..n]) {
         debug!("Detected TLS connection");
         let hostname = extract_sni(&peek_buf[..n])?;
-        // TODO handle https://xxx and return the proxy+sw.js, currently tunneling to iroh
+        // TODO. Currently tunneling to iroh. Future: handle https://xxx and return the proxy+sw.js (requires certs)
         return tunnel_to_iroh(client, &hostname, state).await;
     }
 

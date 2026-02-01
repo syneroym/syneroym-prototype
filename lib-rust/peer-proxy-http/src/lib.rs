@@ -19,7 +19,11 @@ struct AppState {
     target: NodeId,
 }
 
-pub async fn start(port: u16, target: NodeId, iroh_relay_url: Option<String>) -> anyhow::Result<()> {
+pub async fn start(
+    port: u16,
+    target: NodeId,
+    iroh_relay_url: Option<String>,
+) -> anyhow::Result<()> {
     info!(
         "Starting LocalNode HTTP Proxy on port {}, target: {:?}",
         port, target
@@ -97,4 +101,3 @@ async fn proxy_connection(
 
     Ok(())
 }
-

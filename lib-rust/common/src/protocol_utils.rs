@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
 use tls_parser::{TlsMessage, TlsMessageHandshake, parse_tls_plaintext};
-use tracing::{error};
+use tracing::error;
 
 pub fn is_tls_client_hello(buf: &[u8]) -> bool {
     // TLS record starts with:

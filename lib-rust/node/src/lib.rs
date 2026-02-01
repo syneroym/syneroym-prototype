@@ -56,13 +56,19 @@ impl LocalNode {
             let node_addr = endpoint.addr();
 
             let signaling_server_url = self.get_signaling_server_url();
-            let iroh_relay_url = self.config.comm_iroh.as_ref().and_then(|c| c.relay_url.clone());
+            let iroh_relay_url = self
+                .config
+                .comm_iroh
+                .as_ref()
+                .and_then(|c| c.relay_url.clone());
 
             let node_addr_proxy = node_addr.clone();
             let iroh_relay_url_proxy = iroh_relay_url.clone();
             let proxy_fut = async move {
                 info!("Starting LocalNode Proxy HTTP...");
-                if let Err(e) = peer_proxy_http::start(3000, node_addr_proxy, iroh_relay_url_proxy).await {
+                if let Err(e) =
+                    peer_proxy_http::start(3000, node_addr_proxy, iroh_relay_url_proxy).await
+                {
                     error!("Proxy HTTP failed: {}", e);
                 }
             };

@@ -17,8 +17,6 @@ use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
-// Use the external crate
-
 mod stream;
 use stream::WebRTCStream;
 
@@ -61,7 +59,7 @@ pub async fn init(config: &Config, handlers: Vec<Arc<dyn ProtocolHandler>>) -> R
         let rtc_config = rtc_config.clone();
         let handlers = handlers.clone();
 
-        let peer_id = "localhost".to_string(); // TODO use the node ID hash after standardizing that. 
+        let peer_id = "localhost".to_string(); // TODO Temporary default. Future: use the node ID hash.
 
         tokio::spawn(async move {
             if let Err(e) =
