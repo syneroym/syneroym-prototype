@@ -1,5 +1,5 @@
-# syneroym-cli
+# Syneroym CLI (`app-cli`)
 
-Command line application for autonomous cooperative value exchange
+A command-line interface for the Syneroym ecosystem. This tool allows you to run a Syneroym peer in a headless environment, making it suitable for servers or advanced user operations.
 
-This is a command line equivalent of the [Syneroym web-mobile app](app-xplatform/README.md).
+Check out src/main.rs, run `cargo run -- -h` for help with command options

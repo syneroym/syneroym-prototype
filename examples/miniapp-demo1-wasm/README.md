@@ -1,6 +1,11 @@
 # WASM Service - Complete WIT Implementation
 
-A complete, working implementation of a transport-agnostic WASM service using WIT (WebAssembly Interface Types) and the Component Model.
+> ⚠️ **Status: WIP, don't expect it to run**
+> 
+
+A complete, working implementation of a transport-agnostic WASM service using WIT (WebAssembly Interface Types) and the Component Model. The same app functionality as the `miniapp-demo1-web`, but core business logic implementation in WebAssembly modules. And supports multiple transports with the same WASM business logic implementation. WASM, http as well as grpc. Uses [Wasm Interface Types - WIT](https://component-model.bytecodealliance.org/design/wit.html), implemented in WASM modules that can be dropped into an [embedded WASM runtime Wasmtime](https://github.com/bytecodealliance/wasmtime)
+
+
 
 ## Quick Start
 
