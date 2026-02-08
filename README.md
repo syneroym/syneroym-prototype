@@ -8,7 +8,7 @@
 
 Syneroym is aiming to be a platform for autonomous cooperative value exchange. It enables users (individuals, small orgs/businesses) to host services (or call them local first apps, mini-apps) on peer nodes running on diverse types of hosts (PCs, mobile, cloud). These apps can be used by consumers (which in turn could be other services too), all participating in a decentralized interaction ecosystem.
 
-## Prototype Checks
+## Prototype Feasibility Checks
 Confirmed feasibility of the following technical aspects needed in the final product.
 - A service end point with a unique hash identity could be made available externally through a peer node/host with its own unique hash. E.g <serviceHash>.<peernodeHash>.<xxx>/<endpointURI>. Service can be accessed directly in most cases with some initial signalling steps to setup the connection handled by Syneroym. For remaining cases, a relay server with external IP address is used.
 - Non-browser client apps in Rust could directly access the services behind NAT using the Iroh client SDK. For non-rust clients, Syneroym app can be installed on the client side node, which will act as a TCP proxy. Services can be accessed with e.g. https://<serviceHash>.<peerNodeHash>.localhost/<endpointURI>.
