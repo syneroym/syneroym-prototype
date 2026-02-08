@@ -2,7 +2,7 @@
 
 > ⚠️ **Status: Exploratory / Unstable**
 > 
-> This project is **WORK IN PROGRESS** and is under active exploration and development. The architecture, APIs, data models, and overall direction are subject to frequent change. Nothing here should be considered stable or production-ready at this stage. The repository is public for transparency and ease of sharing, not as an invitation for general use or contribution at this time.
+> This is a prototype project to verify some key behaviors needed for the P2P platform envisioned in the [vision document](https://github.com/syneroym/foundation/blob/main/product/00-vision.md). Nothing here should be considered stable or intended for production-readiness. Aafter some more experimentation, work on this repo will be stopped and move over to the main [Syneroym repo](https://github.com/syneroym/syneroym). 
 
 ## Introduction
 
