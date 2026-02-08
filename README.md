@@ -1,14 +1,21 @@
-# Syneroym
+# Syneroym Prototype
 
 > ⚠️ **Status: Exploratory / Unstable**
 > 
-> This is a prototype project to verify some key behaviors needed for the P2P platform envisioned in the [vision document](https://github.com/syneroym/foundation/blob/main/product/00-vision.md). Nothing here should be considered stable or intended for production-readiness. Aafter some more experimentation, work on this repo will be stopped and move over to the main [Syneroym repo](https://github.com/syneroym/syneroym). 
+> This is a prototype project to verify some key behaviors needed for the P2P platform envisioned in the [vision document](https://github.com/syneroym/foundation/blob/main/product/00-vision.md). Nothing here should be considered stable or intended for production-readiness. After some more experimentation, work on this repo will be stopped and moved over to the main [Syneroym repo](https://github.com/syneroym/syneroym).
 
 ## Introduction
 
 Syneroym is aiming to be a platform for autonomous cooperative value exchange. It enables users (individuals, small orgs/businesses) to host services (or call them local first apps, mini-apps) on peer nodes running on diverse types of hosts (PCs, mobile, cloud). These apps can be used by consumers (which in turn could be other services too), all participating in a decentralized interaction ecosystem.
 
-## Functionality highlights (WIP)
+## Prototype Checks
+Confirmed feasibility of the following technical aspects needed in the final product.
+- A service end point with a unique hash identity could be made available externally through a peer node/host with its own unique hash. E.g <serviceHash>.<peernodeHash>.<xxx>/<endpointURI>. Service can be accessed directly in most cases with some initial signalling steps to setup the connection handled by Syneroym. For remaining cases, a relay server with external IP address is used.
+- Non-browser client apps in Rust could directly access the services behind NAT using the Iroh client SDK. For non-rust clients, Syneroym app can be installed on the client side node, which will act as a TCP proxy. Services can be accessed with e.g. https://<serviceHash>.<peerNodeHash>.localhost/<endpointURI>.
+- A browser can also directly access website behind a NAT with little initial exchange of signalling information through a shared server. This needs to use WebRTC and Service workers to override a normal fetch. Websocket communication within browser needs to go through a TCP proxy though. Syneroym app itself can act as that TCP proxy, and services are accessed with https://<serviceHash>.<peerNodeHash>.localhost/<endpointURI>.
+
+
+## Functionality highlights
 - Single `Peer` app running on each host, that houses (or enables access to) apps within itself. Peer could be behind the NAT without external IP.
 - Developers write mini-apps or services that compile to variety of deployable modules. These miniapps can be dropped into/removed from hosts as needed.
 - All mini-apps are sandboxed in their private environment with quota restrictions.
@@ -17,7 +24,7 @@ Syneroym is aiming to be a platform for autonomous cooperative value exchange. I
 - Most data passes directly from peer to peer with some very basic shared servers for initial peer discovery. 
   - Data-relays are used as last fallback if NAT or firewall limitations disallow direct communication. But still communication is end-to-end encrypted, so data cannot be seen by relays too.
 
-## Architecture highlights (WIP)
+## Architecture highlights
 - Peer discovery signalling using iroh and webrtc, with UDP hole punching. TCP relay as fallback.
 - Unique hashes as identity, encryption based on public-private keys, self-signed digital certs. For nodes, services.
 - [Bittorrent BEP 44](https://www.bittorrent.org/beps/bep_0044.html) as a service registry for discovery
